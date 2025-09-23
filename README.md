@@ -136,6 +136,7 @@ interface TimerData {
 1. ~~Consolidate app styling~~ ✅ **COMPLETED**
 2. ~~Create basic stopwatch component~~ ✅ **COMPLETED**
 3. ~~Add stopwatch to the homepage~~ ✅ **COMPLETED**
-4. Implement timer history and timestamp logging
-5. Add local storage persistence for timer state
-6. Implement daily total calculation from actual timer sessions
+4. Get Today's Total time working
+5. Implement timer history and timestamp logging
+6. Add local storage persistence for timer state
+7. Implement daily total calculation from actual timer sessions

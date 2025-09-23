@@ -4,6 +4,8 @@ import {useState, useEffect, useRef} from "react";
 
 interface TimerProps {
   id: string;
+  elapsed: number;
+  onElapsedChange: (id: string, newElapsed: number) => void;
   onStart?: (id: string) => void;
   onStop?: (id: string) => void;
   isActive?: boolean;
@@ -11,11 +13,12 @@ interface TimerProps {
 
 export default function Timer({
   id,
+  elapsed,
+  onElapsedChange,
   onStart,
   onStop,
   isActive = false,
 }: TimerProps) {
-  const [time, setTime] = useState(0); // Time in seconds
   const [isRunning, setIsRunning] = useState(false);
   const [projectName, setProjectName] = useState("");
   const [taskName, setTaskName] = useState("");
@@ -61,7 +64,7 @@ export default function Timer({
   useEffect(() => {
     if (isRunning && isActive) {
       intervalRef.current = setInterval(() => {
-        setTime((prevTime) => prevTime + 1);
+        onElapsedChange(id, elapsed + 1);
       }, 1000);
     } else {
       if (intervalRef.current) {
@@ -75,7 +78,9 @@ export default function Timer({
         clearInterval(intervalRef.current);
       }
     };
-  }, [isRunning, isActive]);
+    // Only depend on isRunning, isActive, elapsed
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isRunning, isActive, elapsed]);
 
   // Stop timer if not active but running
   useEffect(() => {
@@ -89,7 +94,7 @@ export default function Timer({
       {/* Timer Display */}
       <div className="text-center mb-6">
         <div className="text-4xl font-light text-gray-900 dark:text-gray-100 font-mono">
-          {formatTime(time)}
+          {formatTime(elapsed)}
         </div>
         <div className="mt-2">
           <span

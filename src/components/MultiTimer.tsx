@@ -6,14 +6,14 @@ import Timer from "./Timer";
 interface TimerData {
   id: string;
   name: string;
+  elapsed: number; // seconds
 }
 
 export default function MultiTimer() {
   const [timers, setTimers] = useState<TimerData[]>([
-    {id: "1", name: "Timer 1"},
+    {id: "1", name: "Timer 1", elapsed: 0},
   ]);
   const [activeTimerId, setActiveTimerId] = useState<string | null>(null);
-  const [totalDailyTime] = useState(0);
 
   // Handle timer start - ensures only one timer runs at a time
   const handleTimerStart = (timerId: string) => {
@@ -30,7 +30,7 @@ export default function MultiTimer() {
   // Add new timer
   const addTimer = () => {
     const newId = (timers.length + 1).toString();
-    setTimers([...timers, {id: newId, name: `Timer ${newId}`}]);
+    setTimers([...timers, {id: newId, name: `Timer ${newId}`, elapsed: 0}]);
   };
 
   // Remove timer
@@ -43,6 +43,15 @@ export default function MultiTimer() {
     }
   };
 
+  // Handle elapsed time update from Timer
+  const handleElapsedChange = (id: string, newElapsed: number) => {
+    setTimers((prevTimers) =>
+      prevTimers.map((timer) =>
+        timer.id === id ? {...timer, elapsed: newElapsed} : timer
+      )
+    );
+  };
+
   // Format time to HH:MM:SS
   const formatTime = (seconds: number): string => {
     const hours = Math.floor(seconds / 3600);
@@ -52,6 +61,9 @@ export default function MultiTimer() {
       .toString()
       .padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   };
+
+  // Calculate total daily time
+  const totalDailyTime = timers.reduce((sum, t) => sum + t.elapsed, 0);
 
   return (
     <div className="max-w-4xl mx-auto">
@@ -122,6 +134,8 @@ export default function MultiTimer() {
 
             <Timer
               id={timer.id}
+              elapsed={timer.elapsed}
+              onElapsedChange={handleElapsedChange}
               onStart={handleTimerStart}
               onStop={handleTimerStop}
               isActive={activeTimerId === timer.id}
