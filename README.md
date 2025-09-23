@@ -1,36 +1,36 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Multi-Timer
 
-## Getting Started
+## Context
 
-First, run the development server:
+The six developers at Dappit software development agency bill client work based on hourly rates. This requires tracking time across multiple projects and tasks throughout the day. Having a simple and elegant multi-timer web app with multiple stopwatches for different tasks will be hugely beneficial.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+## MVP Requirements
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+1. Stopwatches work seamlessly: starting or resuming a certain watch pauses all other ones.
+2. A central number shows how much time I’ve done for the day, which is the sum of the active watches.
+3. The app keeps a history of timestamps when watches were started and stopped, so I can have a breakdown of what I did and when.
+4. If I lose internet connection or close the browser, it keeps the progress. If I lose the watches, I lose my billing time for the day. This is another reason why point 3 is important (to store a cache of times stopped and started).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Future Features
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. Integrate with ClickUp, Linear, or any other project management software to pull tasks in for the day that can give names to the watches.
+2. Potentially sync with Zoho Books to make logging the hours easier at the end of the day.
 
-## Learn More
+## Work Completed So Far
 
-To learn more about Next.js, take a look at the following resources:
+- [x] Next.js project initialization
+- [x] Connection with GitHub
+- [x] Connection with Vercel
+- [x] Consolidate app styling with Dappit brand guidelines
+  - [x] Implemented Poppins font (primary Dappit typeface)
+  - [x] Applied Dappit color palette (#202020, #F3F3F3, #01D9B5, #FF7F50)
+  - [x] Set up proper typography with recommended letter spacing and line height
+  - [x] Moved Dappit logos to public folder
+  - [x] Created minimal, professional homepage design
+  - [x] Configured Tailwind with Dappit brand colors
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Immediate Next Steps
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+1. ~~Consolidate app styling~~ ✅ **COMPLETED**
+2. Create basic stopwatch component
+3. Add stopwatch to the homepage
