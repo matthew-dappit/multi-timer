@@ -13,7 +13,7 @@ export default function MultiTimer() {
     {id: "1", name: "Timer 1"},
   ]);
   const [activeTimerId, setActiveTimerId] = useState<string | null>(null);
-  const [totalDailyTime, setTotalDailyTime] = useState(0);
+  const [totalDailyTime] = useState(0);
 
   // Handle timer start - ensures only one timer runs at a time
   const handleTimerStart = (timerId: string) => {
@@ -57,7 +57,7 @@ export default function MultiTimer() {
     <div className="max-w-4xl mx-auto">
       {/* Daily Total */}
       <div className="bg-gray-900 dark:bg-dappit-black text-white rounded-lg p-6 mb-8 text-center">
-        <h2 className="text-lg font-medium mb-2">Today's Total</h2>
+        <h2 className="text-lg font-medium mb-2">Today&apos;s Total</h2>
         <div className="text-5xl font-light font-mono">
           {formatTime(totalDailyTime)}
         </div>

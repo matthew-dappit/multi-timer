@@ -6,9 +6,10 @@ export default function Home() {
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       {/* Header */}
       <header className="bg-white dark:bg-gray-800 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
+        <div className="py-4 px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center">
+            {/* Logo */}
+            <div className="flex items-center">
               <Image
                 src="/dappit-logo-LightBG.svg"
                 alt="Dappit Logo"
@@ -25,16 +26,18 @@ export default function Home() {
                 priority
                 className="hidden dark:block"
               />
-              <div className="hidden sm:block">
-                <h1 className="text-2xl font-medium text-gray-900 dark:text-gray-100">
-                  Multi-Timer
-                </h1>
-                <p className="text-sm text-gray-600 dark:text-gray-400">
-                  Professional Time Tracking
-                </p>
-              </div>
             </div>
-            <div className="sm:hidden">
+            {/* Header Text */}
+            <div className="hidden sm:block ml-auto">
+              <h1 className="text-2xl font-medium text-gray-900 dark:text-gray-100">
+                Multi-Timer
+              </h1>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Professional Time Tracking
+              </p>
+            </div>
+            {/* Mobile Title */}
+            <div className="sm:hidden ml-4">
               <h1 className="text-xl font-medium text-gray-900 dark:text-gray-100">
                 Multi-Timer
               </h1>
