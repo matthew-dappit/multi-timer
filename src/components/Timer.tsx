@@ -1,11 +1,16 @@
 "use client";
 
 import {useState, useEffect, useRef} from "react";
+import type {CSSProperties} from "react";
 
 interface TimerProps {
   id: string;
   elapsed: number;
+  taskName: string;
+  notes: string;
   onElapsedChange: (id: string, newElapsed: number) => void;
+  onTaskChange: (id: string, task: string) => void;
+  onNotesChange: (id: string, notes: string) => void;
   onStart?: (id: string) => void;
   onStop?: (id: string) => void;
   isActive?: boolean;
@@ -14,15 +19,16 @@ interface TimerProps {
 export default function Timer({
   id,
   elapsed,
+  taskName,
+  notes,
   onElapsedChange,
+  onTaskChange,
+  onNotesChange,
   onStart,
   onStop,
   isActive = false,
 }: TimerProps) {
   const [isRunning, setIsRunning] = useState(false);
-  const [projectName, setProjectName] = useState("");
-  const [taskName, setTaskName] = useState("");
-  const [notes, setNotes] = useState("");
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Format time to HH:MM:SS
@@ -89,118 +95,56 @@ export default function Timer({
     }
   }, [isActive, isRunning]);
 
+  const activeIndicatorStyle = isRunning && isActive ? "ring-2 ring-offset-2" : "";
+  const activeRingStyle = isRunning && isActive
+    ? ({"--tw-ring-color": "#01D9B5"} as CSSProperties)
+    : undefined;
+
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-4">
-      {/* Timer Display */}
-      <div className="text-center mb-6">
-        <div className="text-4xl font-light text-gray-900 dark:text-gray-100 font-mono">
+    <div
+      className={`flex h-full flex-col gap-4 rounded-xl border border-gray-200 bg-white p-4 shadow-sm transition-shadow dark:border-gray-700 dark:bg-gray-800 ${activeIndicatorStyle}`}
+      style={activeRingStyle}
+    >
+      <div className="flex items-center gap-2">
+        <div
+          className={`h-2 w-2 rounded-full ${
+            isRunning && isActive ? "bg-teal-400" : "bg-gray-300"
+          }`}
+        />
+        <span className="text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">
+          {isRunning && isActive ? "Running" : "Idle"}
+        </span>
+      </div>
+
+      <input
+        value={taskName}
+        onChange={(event) => onTaskChange(id, event.target.value)}
+        placeholder="Task name"
+        className="w-full rounded-md border border-gray-200 bg-transparent px-3 py-2 text-sm font-medium text-gray-900 outline-none transition focus:border-teal-400 focus:ring-1 focus:ring-teal-400 dark:border-gray-700 dark:text-gray-100"
+      />
+
+      <div className="text-center">
+        <div className="font-mono text-3xl font-light text-gray-900 dark:text-gray-100">
           {formatTime(elapsed)}
         </div>
-        <div className="mt-2">
-          <span
-            className={`inline-block w-3 h-3 rounded-full ${
-              isRunning && isActive ? "" : "bg-gray-300"
-            }`}
-            style={{
-              backgroundColor: isRunning && isActive ? "#01D9B5" : undefined,
-            }}
-          />
-          <span className="ml-2 text-sm text-gray-500 dark:text-gray-400">
-            {isRunning && isActive ? "Running" : "Stopped"}
-          </span>
-        </div>
       </div>
 
-      {/* Form Fields */}
-      <div className="space-y-4 mb-6">
-        {/* Project Name */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            Project name
-          </label>
-          <select
-            value={projectName}
-            onChange={(e) => setProjectName(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:border-transparent"
-            style={{"--tw-ring-color": "#01D9B5"} as React.CSSProperties}
-          >
-            <option value="">Select Project</option>
-            <option value="dappit-internal">Dappit Internal</option>
-            <option value="client-project-a">Client Project A</option>
-            <option value="client-project-b">Client Project B</option>
-            <option value="marketing">Marketing</option>
-            <option value="training">Training & Development</option>
-          </select>
-        </div>
+      <textarea
+        value={notes}
+        onChange={(event) => onNotesChange(id, event.target.value)}
+        placeholder="Notes"
+        rows={2}
+        className="w-full flex-1 resize-none rounded-md border border-gray-200 bg-transparent px-3 py-2 text-sm text-gray-700 outline-none transition focus:border-teal-400 focus:ring-1 focus:ring-teal-400 dark:border-gray-700 dark:text-gray-200"
+      />
 
-        {/* Task Name */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            Task Name
-          </label>
-          <select
-            value={taskName}
-            onChange={(e) => setTaskName(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:border-transparent"
-            style={{"--tw-ring-color": "#01D9B5"} as React.CSSProperties}
-          >
-            <option value="">Select Task</option>
-            <option value="development">Development</option>
-            <option value="code-review">Code Review</option>
-            <option value="testing">Testing</option>
-            <option value="documentation">Documentation</option>
-            <option value="meetings">Meetings</option>
-            <option value="planning">Planning</option>
-            <option value="bug-fixes">Bug Fixes</option>
-          </select>
-        </div>
-
-        {/* Notes */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            Notes
-          </label>
-          <textarea
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder="Add notes about what you're working on..."
-            rows={3}
-            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:border-transparent resize-none"
-            style={{"--tw-ring-color": "#01D9B5"} as React.CSSProperties}
-          />
-        </div>
-
-        {/* Billable Checkbox */}
-        <div className="flex items-center">
-          <input
-            type="checkbox"
-            id={`billable-${id}`}
-            className="h-4 w-4 border-gray-300 rounded"
-            style={{accentColor: "#01D9B5"}}
-            defaultChecked
-          />
-          <label
-            htmlFor={`billable-${id}`}
-            className="ml-2 text-sm text-gray-700 dark:text-gray-300"
-          >
-            Billable
-          </label>
-        </div>
-      </div>
-
-      {/* Start/Stop Button */}
       <button
         onClick={toggleTimer}
-        className={`w-full py-3 px-4 rounded-md font-medium transition-colors shadow-md ${
-          isRunning && isActive
-            ? "text-white hover:opacity-90"
-            : "text-white hover:opacity-90"
-        }`}
+        className="w-full rounded-md bg-teal-400 px-3 py-2 text-sm font-semibold text-white transition hover:bg-teal-500"
         style={{
           backgroundColor: isRunning && isActive ? "#FF7F50" : "#01D9B5",
         }}
       >
-        {isRunning && isActive ? "STOP" : "START"}
+        {isRunning && isActive ? "Stop" : "Start"}
       </button>
     </div>
   );

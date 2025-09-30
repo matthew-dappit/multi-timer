@@ -5,54 +5,158 @@ import Timer from "./Timer";
 
 interface TimerData {
   id: string;
-  name: string;
+  taskName: string;
+  notes: string;
   elapsed: number; // seconds
 }
 
+interface TimerGroup {
+  id: string;
+  projectName: string;
+  timers: TimerData[];
+}
+
+const createId = () => Math.random().toString(36).slice(2, 12);
+
+const createTimer = (): TimerData => ({
+  id: createId(),
+  taskName: "",
+  notes: "",
+  elapsed: 0,
+});
+
+const createGroup = (index: number): TimerGroup => ({
+  id: createId(),
+  projectName: `Project ${index}`,
+  timers: [createTimer()],
+});
+
 export default function MultiTimer() {
-  const [timers, setTimers] = useState<TimerData[]>([
-    {id: "1", name: "Timer 1", elapsed: 0},
-  ]);
+  const [groups, setGroups] = useState<TimerGroup[]>([createGroup(1)]);
   const [activeTimerId, setActiveTimerId] = useState<string | null>(null);
 
-  // Handle timer start - ensures only one timer runs at a time
-  const handleTimerStart = (timerId: string) => {
-    setActiveTimerId(timerId);
+  const timerKey = (groupId: string, timerId: string) => `${groupId}:${timerId}`;
+
+  const updateGroups = (updater: (groups: TimerGroup[]) => TimerGroup[]) => {
+    setGroups((previous) => updater(previous));
   };
 
-  // Handle timer stop
-  const handleTimerStop = (timerId: string) => {
-    if (activeTimerId === timerId) {
+  const handleTimerStart = (groupId: string, timerId: string) => {
+    setActiveTimerId(timerKey(groupId, timerId));
+  };
+
+  const handleTimerStop = (groupId: string, timerId: string) => {
+    if (activeTimerId === timerKey(groupId, timerId)) {
       setActiveTimerId(null);
     }
   };
 
-  // Add new timer
-  const addTimer = () => {
-    const newId = (timers.length + 1).toString();
-    setTimers([...timers, {id: newId, name: `Timer ${newId}`, elapsed: 0}]);
-  };
-
-  // Remove timer
-  const removeTimer = (timerId: string) => {
-    if (timers.length > 1) {
-      setTimers(timers.filter((timer) => timer.id !== timerId));
-      if (activeTimerId === timerId) {
-        setActiveTimerId(null);
-      }
-    }
-  };
-
-  // Handle elapsed time update from Timer
-  const handleElapsedChange = (id: string, newElapsed: number) => {
-    setTimers((prevTimers) =>
-      prevTimers.map((timer) =>
-        timer.id === id ? {...timer, elapsed: newElapsed} : timer
+  const handleElapsedChange = (
+    groupId: string,
+    timerId: string,
+    newElapsed: number
+  ) => {
+    updateGroups((previous) =>
+      previous.map((group) =>
+        group.id === groupId
+          ? {
+              ...group,
+              timers: group.timers.map((timer) =>
+                timer.id === timerId ? {...timer, elapsed: newElapsed} : timer
+              ),
+            }
+          : group
       )
     );
   };
 
-  // Format time to HH:MM:SS
+  const handleTaskChange = (groupId: string, timerId: string, task: string) => {
+    updateGroups((previous) =>
+      previous.map((group) =>
+        group.id === groupId
+          ? {
+              ...group,
+              timers: group.timers.map((timer) =>
+                timer.id === timerId ? {...timer, taskName: task} : timer
+              ),
+            }
+          : group
+      )
+    );
+  };
+
+  const handleNotesChange = (groupId: string, timerId: string, value: string) => {
+    updateGroups((previous) =>
+      previous.map((group) =>
+        group.id === groupId
+          ? {
+              ...group,
+              timers: group.timers.map((timer) =>
+                timer.id === timerId ? {...timer, notes: value} : timer
+              ),
+            }
+          : group
+      )
+    );
+  };
+
+  const addGroup = () => {
+    updateGroups((previous) => [
+      ...previous,
+      createGroup(previous.length + 1),
+    ]);
+  };
+
+  const removeGroup = (groupId: string) => {
+    if (groups.length === 1) {
+      return;
+    }
+
+    setGroups((previous) => previous.filter((group) => group.id !== groupId));
+
+    if (activeTimerId?.startsWith(`${groupId}:`)) {
+      setActiveTimerId(null);
+    }
+  };
+
+  const addTimerToGroup = (groupId: string) => {
+    updateGroups((previous) =>
+      previous.map((group) =>
+        group.id === groupId
+          ? {...group, timers: [...group.timers, createTimer()]}
+          : group
+      )
+    );
+  };
+
+  const removeTimerFromGroup = (groupId: string, timerId: string) => {
+    updateGroups((previous) =>
+      previous.map((group) =>
+        group.id === groupId
+          ? {
+              ...group,
+              timers:
+                group.timers.length > 1
+                  ? group.timers.filter((timer) => timer.id !== timerId)
+                  : group.timers,
+            }
+          : group
+      )
+    );
+
+    if (activeTimerId === timerKey(groupId, timerId)) {
+      setActiveTimerId(null);
+    }
+  };
+
+  const handleProjectNameChange = (groupId: string, name: string) => {
+    updateGroups((previous) =>
+      previous.map((group) =>
+        group.id === groupId ? {...group, projectName: name} : group
+      )
+    );
+  };
+
   const formatTime = (seconds: number): string => {
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
@@ -62,114 +166,133 @@ export default function MultiTimer() {
       .padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   };
 
-  // Calculate total daily time
-  const totalDailyTime = timers.reduce((sum, t) => sum + t.elapsed, 0);
+  const totalDailyTime = groups.reduce((sum, group) => {
+    const groupTotal = group.timers.reduce((acc, timer) => acc + timer.elapsed, 0);
+    return sum + groupTotal;
+  }, 0);
 
   return (
-    <div className="max-w-4xl mx-auto">
-      {/* Daily Total */}
-      <div className="bg-gray-900 dark:bg-dappit-black text-white rounded-lg p-6 mb-8 text-center">
-        <h2 className="text-lg font-medium mb-2">Today&apos;s Total</h2>
-        <div className="text-5xl font-light font-mono">
+    <div className="flex h-full w-full flex-col gap-8">
+      <div className="rounded-2xl bg-gray-900 p-6 text-center text-white shadow-lg dark:bg-dappit-black">
+        <h2 className="text-lg font-medium">Today&apos;s Total</h2>
+        <div className="mt-3 font-mono text-5xl font-light">
           {formatTime(totalDailyTime)}
         </div>
-        <p className="text-gray-300 dark:text-dappit-gray mt-2">
-          Across all timers
+        <p className="mt-2 text-sm text-gray-300 dark:text-dappit-gray">
+          Across all timer groups
         </p>
       </div>
 
-      {/* Add Timer Button */}
-      <div className="flex justify-between items-center mb-6">
-        <h3 className="text-xl font-medium text-gray-900 dark:text-gray-100">
-          Active Timers
-        </h3>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
+            Timer Groups
+          </h3>
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            Organise by project, then track tasks inside each group.
+          </p>
+        </div>
         <button
-          onClick={addTimer}
-          className="bg-dappit-turquoise hover:bg-dappit-turquoise/90 text-white px-4 py-2 rounded-md transition-colors flex items-center gap-2 shadow-md"
+          onClick={addGroup}
+          className="flex items-center gap-2 rounded-md bg-teal-400 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-500"
           style={{backgroundColor: "#01D9B5"}}
         >
           <svg
-            className="w-5 h-5"
+            className="h-4 w-4"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
           >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M12 4v16m8-8H4"
-            />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
-          Add Timer
+          Add Project Group
         </button>
       </div>
 
-      {/* Timers Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {timers.map((timer) => (
-          <div key={timer.id} className="relative">
-            {/* Remove Timer Button (only show if more than 1 timer) */}
-            {timers.length > 1 && (
-              <button
-                onClick={() => removeTimer(timer.id)}
-                className="absolute top-2 right-2 z-10 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center hover:bg-red-600 transition-colors"
-                title="Remove Timer"
-              >
-                <svg
-                  className="w-4 h-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
+      <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+        {groups.map((group, index) => (
+          <div
+            key={group.id}
+            className="flex min-h-[320px] flex-col gap-5 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition hover:shadow-md dark:border-gray-700 dark:bg-gray-900/50"
+          >
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="flex-1">
+                <label className="text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                  Project
+                </label>
+                <input
+                  value={group.projectName}
+                  onChange={(event) => handleProjectNameChange(group.id, event.target.value)}
+                  placeholder={`Project ${index + 1}`}
+                  className="mt-1 w-full rounded-lg border border-gray-200 bg-transparent px-3 py-2 text-sm font-medium text-gray-900 outline-none focus:border-teal-400 focus:ring-1 focus:ring-teal-300 dark:border-gray-700 dark:text-gray-100"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => addTimerToGroup(group.id)}
+                  className="rounded-md border border-teal-400 px-3 py-2 text-xs font-semibold text-teal-600 transition hover:bg-teal-50 dark:text-teal-300 dark:hover:bg-teal-500/10"
                 >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M6 18L18 6M6 6l12 12"
-                  />
-                </svg>
-              </button>
-            )}
+                  Add Timer
+                </button>
+                {groups.length > 1 && (
+                  <button
+                    onClick={() => removeGroup(group.id)}
+                    className="rounded-md border border-red-200 px-3 py-2 text-xs font-semibold text-red-500 transition hover:bg-red-50 dark:border-red-500/40 dark:text-red-400 dark:hover:bg-red-500/10"
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
+            </div>
 
-            <Timer
-              id={timer.id}
-              elapsed={timer.elapsed}
-              onElapsedChange={handleElapsedChange}
-              onStart={handleTimerStart}
-              onStop={handleTimerStop}
-              isActive={activeTimerId === timer.id}
-            />
+            <div className="grid gap-4 grid-cols-[repeat(auto-fit,minmax(220px,1fr))]">
+              {group.timers.map((timer) => {
+                const key = timerKey(group.id, timer.id);
+                return (
+                  <div key={timer.id} className="relative">
+                    {group.timers.length > 1 && (
+                      <button
+                        onClick={() => removeTimerFromGroup(group.id, timer.id)}
+                        className="absolute right-2 top-2 z-10 rounded-full bg-red-500/90 p-1 text-white shadow hover:bg-red-500"
+                        title="Remove timer"
+                      >
+                        <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    )}
+
+                    <Timer
+                      id={timer.id}
+                      elapsed={timer.elapsed}
+                      taskName={timer.taskName}
+                      notes={timer.notes}
+                      onElapsedChange={(id, newElapsed) =>
+                        handleElapsedChange(group.id, id, newElapsed)
+                      }
+                      onTaskChange={(id, value) =>
+                        handleTaskChange(group.id, id, value)
+                      }
+                      onNotesChange={(id, value) =>
+                        handleNotesChange(group.id, id, value)
+                      }
+                      onStart={() => handleTimerStart(group.id, timer.id)}
+                      onStop={() => handleTimerStop(group.id, timer.id)}
+                      isActive={activeTimerId === key}
+                    />
+                  </div>
+                );
+              })}
+            </div>
           </div>
         ))}
       </div>
 
-      {/* Instructions */}
-      <div className="mt-8 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-        <div className="flex items-start">
-          <svg
-            className="w-5 h-5 text-blue-600 dark:text-blue-400 mt-0.5 mr-3"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-            />
-          </svg>
-          <div>
-            <h4 className="text-sm font-medium text-blue-900 dark:text-blue-100 mb-1">
-              How it works
-            </h4>
-            <p className="text-sm text-blue-700 dark:text-blue-300">
-              Starting any timer automatically pauses all others. Only one timer
-              can run at a time to ensure accurate time tracking.
-            </p>
-          </div>
-        </div>
+      <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-700 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-300">
+        <h4 className="mb-1 font-medium">Tip</h4>
+        <p>
+          Start one timer at a time—switching to another project or task will pause the currently running timer automatically.
+        </p>
       </div>
     </div>
   );
