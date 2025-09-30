@@ -7,7 +7,7 @@ interface TimerData {
   id: string;
   taskName: string;
   notes: string;
-  elapsed: number; // seconds
+  elapsed: number; // seconds - calculated from time events
 }
 
 interface TimerGroup {
@@ -20,7 +20,17 @@ interface RunningSession {
   groupId: string;
   timerId: string;
   startedAt: number;
-  elapsedWhenStarted: number;
+}
+
+// Time tracking event for history/analytics
+interface TimeEvent {
+  id: string;
+  groupId: string;
+  timerId: string;
+  startTime: number; // timestamp in ms
+  endTime: number | null; // null if currently running
+  taskName: string; // snapshot at time of event
+  projectName: string; // snapshot at time of event
 }
 
 const createId = () => Math.random().toString(36).slice(2, 12);
@@ -40,6 +50,50 @@ const createGroup = (index: number): TimerGroup => ({
 
 const STORAGE_KEY = "multi-timer/state";
 const RUNNING_SESSION_KEY = "multi-timer/running";
+const TIME_EVENTS_KEY = "multi-timer/time-events";
+
+// Helper: Calculate total elapsed seconds from time events for a specific timer
+const calculateElapsedFromEvents = (
+  events: TimeEvent[],
+  groupId: string,
+  timerId: string,
+  currentTime: number = Date.now()
+): number => {
+  const relevantEvents = events.filter(
+    (event) => event.groupId === groupId && event.timerId === timerId
+  );
+
+  let totalSeconds = 0;
+
+  for (const event of relevantEvents) {
+    const endTime = event.endTime ?? currentTime;
+    const duration = Math.max(
+      0,
+      Math.floor((endTime - event.startTime) / 1000)
+    );
+    totalSeconds += duration;
+  }
+
+  return totalSeconds;
+};
+
+// Helper: Get today's date key for filtering events
+const getTodayKey = (): string => {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(
+    2,
+    "0"
+  )}-${String(now.getDate()).padStart(2, "0")}`;
+};
+
+// Helper: Filter events for today only
+const filterTodayEvents = (events: TimeEvent[]): TimeEvent[] => {
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const todayStartMs = todayStart.getTime();
+
+  return events.filter((event) => event.startTime >= todayStartMs);
+};
 
 const normaliseTimer = (candidate: unknown): TimerData => {
   if (!candidate || typeof candidate !== "object") {
@@ -51,17 +105,13 @@ const normaliseTimer = (candidate: unknown): TimerData => {
 
   return {
     id: typeof value.id === "string" && value.id.trim() ? value.id : createId(),
-    taskName:
-      typeof value.taskName === "string" ? value.taskName : "",
+    taskName: typeof value.taskName === "string" ? value.taskName : "",
     notes: typeof value.notes === "string" ? value.notes : "",
     elapsed: Number.isFinite(elapsed) && elapsed >= 0 ? Math.floor(elapsed) : 0,
   };
 };
 
-const normaliseGroup = (
-  candidate: unknown,
-  index: number
-): TimerGroup => {
+const normaliseGroup = (candidate: unknown, index: number): TimerGroup => {
   if (!candidate || typeof candidate !== "object") {
     return createGroup(index + 1);
   }
@@ -86,10 +136,24 @@ export default function MultiTimer() {
   const [groups, setGroups] = useState<TimerGroup[]>([createGroup(1)]);
   const [activeTimerId, setActiveTimerId] = useState<string | null>(null);
   const [isCompact, setIsCompact] = useState(false);
+  const [timeEvents, setTimeEvents] = useState<TimeEvent[]>([]);
   const hasHydrated = useRef(false);
   const runningSessionRef = useRef<RunningSession | null>(null);
+  const activeEventIdRef = useRef<string | null>(null);
 
-  const timerKey = (groupId: string, timerId: string) => `${groupId}:${timerId}`;
+  const timerKey = (groupId: string, timerId: string) =>
+    `${groupId}:${timerId}`;
+
+  // Persist time events to localStorage
+  const persistTimeEvents = (events: TimeEvent[]) => {
+    if (typeof window === "undefined") return;
+
+    try {
+      window.localStorage.setItem(TIME_EVENTS_KEY, JSON.stringify(events));
+    } catch (error) {
+      console.error("Failed to persist time events", error);
+    }
+  };
 
   const persistRunningSession = (session: RunningSession | null) => {
     runningSessionRef.current = session;
@@ -112,19 +176,23 @@ export default function MultiTimer() {
     }
   };
 
-  const findTimerElapsed = (groupId: string, timerId: string) => {
-    const group = groups.find((candidate) => candidate.id === groupId);
-    if (!group) {
-      return 0;
-    }
-
-    const timer = group.timers.find((candidate) => candidate.id === timerId);
-    return timer ? timer.elapsed : 0;
-  };
-
   useEffect(() => {
     let nextGroups: TimerGroup[] = [createGroup(1)];
     let nextIsCompact = false;
+    let loadedEvents: TimeEvent[] = [];
+
+    // Load time events
+    try {
+      const storedEvents = window.localStorage.getItem(TIME_EVENTS_KEY);
+      if (storedEvents) {
+        const parsed = JSON.parse(storedEvents);
+        if (Array.isArray(parsed)) {
+          loadedEvents = filterTodayEvents(parsed); // Only keep today's events
+        }
+      }
+    } catch (error) {
+      console.error("Failed to load time events from storage", error);
+    }
 
     try {
       const storedValue = window.localStorage.getItem(STORAGE_KEY);
@@ -152,90 +220,89 @@ export default function MultiTimer() {
       console.error("Failed to load timers from storage", error);
     }
 
+    // Recalculate elapsed times from events
+    const now = Date.now();
+    nextGroups = nextGroups.map((group) => ({
+      ...group,
+      timers: group.timers.map((timer) => ({
+        ...timer,
+        elapsed: calculateElapsedFromEvents(
+          loadedEvents,
+          group.id,
+          timer.id,
+          now
+        ),
+      })),
+    }));
+
     let runningSession: RunningSession | null = null;
+    let activeEventId: string | null = null;
 
     try {
       const storedSession = window.sessionStorage.getItem(RUNNING_SESSION_KEY);
       if (storedSession) {
-        const parsedSession = JSON.parse(storedSession) as Partial<RunningSession>;
-        const {groupId, timerId, startedAt, elapsedWhenStarted} = parsedSession;
+        const parsedSession = JSON.parse(
+          storedSession
+        ) as Partial<RunningSession>;
+        const {groupId, timerId, startedAt} = parsedSession;
 
         if (
           parsedSession &&
           typeof groupId === "string" &&
           typeof timerId === "string" &&
           typeof startedAt === "number" &&
-          Number.isFinite(startedAt) &&
-          typeof elapsedWhenStarted === "number" &&
-          Number.isFinite(elapsedWhenStarted)
+          Number.isFinite(startedAt)
         ) {
           runningSession = {
             groupId,
             timerId,
             startedAt,
-            elapsedWhenStarted,
           };
+
+          // Find or create the active event
+          const existingEvent = loadedEvents.find(
+            (e) =>
+              e.groupId === groupId &&
+              e.timerId === timerId &&
+              e.endTime === null
+          );
+
+          if (existingEvent) {
+            activeEventId = existingEvent.id;
+          } else {
+            // Create a new event for the running timer
+            const group = nextGroups.find((g) => g.id === groupId);
+            const timer = group?.timers.find((t) => t.id === timerId);
+
+            if (group && timer) {
+              const newEvent: TimeEvent = {
+                id: createId(),
+                groupId,
+                timerId,
+                startTime: startedAt,
+                endTime: null,
+                taskName: timer.taskName,
+                projectName: group.projectName,
+              };
+              loadedEvents.push(newEvent);
+              activeEventId = newEvent.id;
+            }
+          }
         }
       }
     } catch (error) {
       console.error("Failed to load running timer session", error);
     }
 
-    let resumedSession: RunningSession | null = null;
-    let resumedTimerKey: string | null = null;
-
-    if (runningSession) {
-      const {groupId, timerId, startedAt, elapsedWhenStarted} = runningSession;
-      const secondsSinceStart = Math.max(
-        0,
-        Math.floor((Date.now() - startedAt) / 1000)
-      );
-
-      let found = false;
-
-      nextGroups = nextGroups.map((group) => {
-        if (group.id !== groupId) {
-          return group;
-        }
-
-        const updatedTimers = group.timers.map((timer) => {
-          if (timer.id !== timerId) {
-            return timer;
-          }
-
-          found = true;
-          const baseElapsed = Math.max(timer.elapsed, elapsedWhenStarted);
-          const updatedElapsed = baseElapsed + secondsSinceStart;
-
-          resumedSession = {
-            groupId,
-            timerId,
-            startedAt: Date.now(),
-            elapsedWhenStarted: updatedElapsed,
-          };
-          resumedTimerKey = timerKey(groupId, timerId);
-
-          return {...timer, elapsed: updatedElapsed};
-        });
-
-        return {
-          ...group,
-          timers: updatedTimers,
-        };
-      });
-
-      if (!found) {
-        resumedSession = null;
-        resumedTimerKey = null;
-      }
-    }
-
     setGroups(nextGroups);
     setIsCompact(nextIsCompact);
+    setTimeEvents(loadedEvents);
 
-    if (resumedTimerKey && resumedSession) {
-      setActiveTimerId(resumedTimerKey);
-      persistRunningSession(resumedSession);
+    if (runningSession && activeEventId) {
+      const key = timerKey(runningSession.groupId, runningSession.timerId);
+      setActiveTimerId(key);
+      activeEventIdRef.current = activeEventId;
+      persistRunningSession(runningSession);
     } else {
       persistRunningSession(null);
     }
@@ -243,6 +310,7 @@ export default function MultiTimer() {
     hasHydrated.current = true;
   }, []);
 
+  // Persist groups and compact mode
   useEffect(() => {
     if (!hasHydrated.current) {
       return;
@@ -256,25 +324,98 @@ export default function MultiTimer() {
     }
   }, [groups, isCompact]);
 
+  // Persist time events whenever they change
+  useEffect(() => {
+    if (!hasHydrated.current) {
+      return;
+    }
+    persistTimeEvents(timeEvents);
+  }, [timeEvents]);
+
+  // Recalculate elapsed times from events periodically when a timer is active
+  useEffect(() => {
+    if (!activeTimerId || !hasHydrated.current) {
+      return;
+    }
+
+    const interval = setInterval(() => {
+      const now = Date.now();
+      setGroups((prev) =>
+        prev.map((group) => ({
+          ...group,
+          timers: group.timers.map((timer) => ({
+            ...timer,
+            elapsed: calculateElapsedFromEvents(
+              timeEvents,
+              group.id,
+              timer.id,
+              now
+            ),
+          })),
+        }))
+      );
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [activeTimerId, timeEvents]);
+
   const updateGroups = (updater: (groups: TimerGroup[]) => TimerGroup[]) => {
     setGroups((previous) => updater(previous));
   };
 
   const handleTimerStart = (groupId: string, timerId: string) => {
+    // Stop any currently running timer
+    if (activeEventIdRef.current) {
+      setTimeEvents((prev) =>
+        prev.map((event) =>
+          event.id === activeEventIdRef.current
+            ? {...event, endTime: Date.now()}
+            : event
+        )
+      );
+    }
+
     const key = timerKey(groupId, timerId);
     setActiveTimerId(key);
 
-    const currentElapsed = findTimerElapsed(groupId, timerId);
+    // Create new time event
+    const group = groups.find((g) => g.id === groupId);
+    const timer = group?.timers.find((t) => t.id === timerId);
+
+    const newEvent: TimeEvent = {
+      id: createId(),
+      groupId,
+      timerId,
+      startTime: Date.now(),
+      endTime: null,
+      taskName: timer?.taskName || "",
+      projectName: group?.projectName || "",
+    };
+
+    setTimeEvents((prev) => [...prev, newEvent]);
+    activeEventIdRef.current = newEvent.id;
+
     persistRunningSession({
       groupId,
       timerId,
       startedAt: Date.now(),
-      elapsedWhenStarted: currentElapsed,
     });
   };
 
   const handleTimerStop = (groupId: string, timerId: string) => {
     if (activeTimerId === timerKey(groupId, timerId)) {
+      // End the current time event
+      if (activeEventIdRef.current) {
+        setTimeEvents((prev) =>
+          prev.map((event) =>
+            event.id === activeEventIdRef.current
+              ? {...event, endTime: Date.now()}
+              : event
+          )
+        );
+        activeEventIdRef.current = null;
+      }
+
       setActiveTimerId(null);
       persistRunningSession(null);
     }
@@ -298,14 +439,8 @@ export default function MultiTimer() {
       )
     );
 
-    if (activeTimerId === timerKey(groupId, timerId)) {
-      persistRunningSession({
-        groupId,
-        timerId,
-        startedAt: Date.now(),
-        elapsedWhenStarted: newElapsed,
-      });
-    }
+    // Don't update the running session here - it should only be set when timer starts
+    // The Timer component calculates elapsed time based on the startedAt timestamp
   };
 
   const handleTaskChange = (groupId: string, timerId: string, task: string) => {
@@ -323,7 +458,11 @@ export default function MultiTimer() {
     );
   };
 
-  const handleNotesChange = (groupId: string, timerId: string, value: string) => {
+  const handleNotesChange = (
+    groupId: string,
+    timerId: string,
+    value: string
+  ) => {
     updateGroups((previous) =>
       previous.map((group) =>
         group.id === groupId
@@ -339,10 +478,7 @@ export default function MultiTimer() {
   };
 
   const addGroup = () => {
-    updateGroups((previous) => [
-      ...previous,
-      createGroup(previous.length + 1),
-    ]);
+    updateGroups((previous) => [...previous, createGroup(previous.length + 1)]);
   };
 
   const removeGroup = (groupId: string) => {
@@ -407,7 +543,10 @@ export default function MultiTimer() {
   };
 
   const totalDailyTime = groups.reduce((sum, group) => {
-    const groupTotal = group.timers.reduce((acc, timer) => acc + timer.elapsed, 0);
+    const groupTotal = group.timers.reduce(
+      (acc, timer) => acc + timer.elapsed,
+      0
+    );
     return sum + groupTotal;
   }, 0);
 
@@ -465,7 +604,12 @@ export default function MultiTimer() {
               stroke="currentColor"
               viewBox="0 0 24 24"
             >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 4v16m8-8H4"
+              />
             </svg>
             Add Project Group
           </button>
@@ -487,7 +631,9 @@ export default function MultiTimer() {
                 </label>
                 <input
                   value={group.projectName}
-                  onChange={(event) => handleProjectNameChange(group.id, event.target.value)}
+                  onChange={(event) =>
+                    handleProjectNameChange(group.id, event.target.value)
+                  }
                   placeholder={`Project ${index + 1}`}
                   className="mt-1 w-full rounded-lg border border-gray-200 bg-transparent px-3 py-2 text-sm font-medium text-gray-900 outline-none focus:border-teal-400 focus:ring-1 focus:ring-teal-300 dark:border-gray-700 dark:text-gray-100"
                 />
@@ -521,8 +667,18 @@ export default function MultiTimer() {
                         className="absolute right-2 top-2 z-10 rounded-full bg-red-500/90 p-1 text-white shadow hover:bg-red-500 cursor-pointer"
                         title="Remove timer"
                       >
-                        <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        <svg
+                          className="h-3.5 w-3.5"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M6 18L18 6M6 6l12 12"
+                          />
                         </svg>
                       </button>
                     )}
@@ -557,7 +713,8 @@ export default function MultiTimer() {
       <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-700 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-300">
         <h4 className="mb-1 font-medium">Tip</h4>
         <p>
-          Start one timer at a time—switching to another project or task will pause the currently running timer automatically.
+          Start one timer at a time—switching to another project or task will
+          pause the currently running timer automatically.
         </p>
       </div>
     </div>
