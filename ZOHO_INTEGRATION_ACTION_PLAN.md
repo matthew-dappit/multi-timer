@@ -48,15 +48,19 @@ ZohoBooks.settings.READ (for organization info)
 ### 2.1 Xano Database Schema
 Create the following tables in Xano:
 
-#### **users** table
-- `id` (int, primary key)
-- `email` (text, unique)
+#### **dappit_users** table ✅ ALREADY EXISTS
+- `id` (integer, primary key)
+- `email` (email, unique)
+- `password` (password, hashed)
+- `first_name` (text)
+- `last_name` (text)
 - `created_at` (timestamp)
-- `updated_at` (timestamp)
+
+**Note**: User authentication is already implemented! See `AUTHENTICATION_GUIDE.md`
 
 #### **zoho_auth** table
 - `id` (int, primary key)
-- `user_id` (int, foreign key → users.id)
+- `user_id` (int, foreign key → dappit_users.id)
 - `access_token` (text, encrypted)
 - `refresh_token` (text, encrypted)
 - `token_expiry` (timestamp)
@@ -68,7 +72,7 @@ Create the following tables in Xano:
 
 #### **zoho_projects** table (cached project data)
 - `id` (int, primary key)
-- `user_id` (int, foreign key → users.id)
+- `user_id` (int, foreign key → dappit_users.id)
 - `zoho_project_id` (text)
 - `project_name` (text)
 - `customer_name` (text)
@@ -89,7 +93,7 @@ Create the following tables in Xano:
 
 #### **timer_sessions** table (local timer data before sync)
 - `id` (int, primary key)
-- `user_id` (int, foreign key → users.id)
+- `user_id` (int, foreign key → dappit_users.id)
 - `local_timer_id` (text) - Maps to MultiTimer component timer ID
 - `zoho_project_id` (text, nullable)
 - `zoho_task_id` (text, nullable)
@@ -277,8 +281,17 @@ XANO_API_KEY=your_xano_api_key
 
 ## Phase 5: Implementation Steps
 
+### Step 0: User Authentication ✅ COMPLETED
+- [x] User authentication system implemented
+- [x] Login/Signup functionality working
+- [x] Protected routes configured
+- [x] User session management in place
+- [x] Integration with Xano backend auth endpoints
+
+**See `AUTHENTICATION_GUIDE.md` for complete documentation.**
+
 ### Step 1: Xano Backend Setup
-- [ ] Create database schema
+- [ ] Create Zoho-related database tables (zoho_auth, zoho_projects, zoho_tasks, timer_sessions)
 - [ ] Implement OAuth authentication endpoints
 - [ ] Implement project fetching endpoints
 - [ ] Implement time entry sync endpoints

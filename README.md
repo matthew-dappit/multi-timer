@@ -42,6 +42,13 @@ The six developers at Dappit software development agency bill client work based 
 - [x] **Shared Layout & Navigation**
   - [x] Root layout wraps pages with branded shell and Navbar
   - [x] Navbar renders logo with home navigation and dark/light support
+- [x] **🆕 User Authentication System**
+  - [x] Login and signup functionality
+  - [x] JWT token-based authentication
+  - [x] Protected routes and session management
+  - [x] Integration with Xano backend
+  - [x] User profile display in navbar
+  - [x] Secure logout functionality
 
 ## Architecture & Components
 
@@ -49,14 +56,47 @@ The six developers at Dappit software development agency bill client work based 
 ```
 src/
 ├── app/
-│   ├── page.tsx          # Home route rendering the multi-timer dashboard
-│   ├── layout.tsx        # Root layout with Poppins font and shared shell
+│   ├── page.tsx          # Home route with protected authentication
+│   ├── layout.tsx        # Root layout with AuthProvider and shared shell
 │   └── globals.css       # Global styles and Tailwind imports
 ├── components/
-│   ├── Navbar.tsx        # Branded navigation bar shared across pages
+│   ├── Navbar.tsx        # Branded navigation with user info and logout
 │   ├── Timer.tsx         # Individual timer component
-│   └── MultiTimer.tsx    # Timer management and daily total
+│   ├── MultiTimer.tsx    # Timer management and daily total
+│   ├── AuthForm.tsx      # Login/signup form component
+│   └── ProtectedRoute.tsx # Route protection wrapper
+├── contexts/
+│   └── AuthContext.tsx   # Authentication state management
+├── lib/
+│   └── auth.ts           # Authentication utilities and API calls
+└── .env.local            # Environment variables (not committed)
 ```
+
+### AuthContext.tsx & auth.ts
+**Purpose**: Centralized authentication state management and API integration.
+**Key Features**:
+- JWT token storage and management
+- User session persistence across page refreshes
+- Login, signup, and logout functionality
+- Protected API request utilities
+- Token verification and auto-refresh
+
+### AuthForm.tsx
+**Purpose**: Unified login and signup form with validation.
+**Key Features**:
+- Toggle between login and signup modes
+- Form validation (email format, password length)
+- Error display and handling
+- Loading states during submission
+- Responsive design matching app theme
+
+### ProtectedRoute.tsx
+**Purpose**: Wrapper component to protect routes requiring authentication.
+**Key Features**:
+- Checks authentication status
+- Shows loading state during verification
+- Renders fallback (login form) for unauthenticated users
+- Allows authenticated users to access protected content
 
 ### Timer.tsx
 **Purpose**: Individual stopwatch card that adapts between full and compact views.
@@ -103,7 +143,57 @@ src/
 5. **Timer increments**: Each second, `Timer.tsx` calls `onElapsedChange(id, newElapsed)` to update the parent, which updates the timer's `elapsed` value in state.
 6. **Today's Total**: `MultiTimer.tsx` always displays the sum of all timers' `elapsed` values, live-updating as timers run.
 
-### Technical Implementation Details
+## Getting Started
+
+### Prerequisites
+- Node.js 18+ installed
+- npm or yarn package manager
+- Xano backend account (authentication is configured)
+
+### Installation
+
+1. Clone the repository:
+```bash
+git clone https://github.com/matthew-dappit/multi-timer.git
+cd multi-timer
+```
+
+2. Install dependencies:
+```bash
+npm install
+```
+
+3. Set up environment variables:
+```bash
+cp .env.example .env.local
+```
+
+Edit `.env.local` and ensure the API base URL is correct:
+```
+NEXT_PUBLIC_API_BASE_URL=https://api.dappit.org/api:vsVOMFSf
+```
+
+4. Run the development server:
+```bash
+npm run dev
+```
+
+5. Open [http://localhost:3000](http://localhost:3000) in your browser
+
+### First Time Setup
+1. Click "Sign up" to create a new account
+2. Enter your details (first name, last name, email, password)
+3. You'll be automatically logged in and can start using the timer
+
+### Usage
+- **Create Timers**: Click "Add Timer" to create a new timer in a project group
+- **Start Timer**: Click the START button or click the timer card (in compact mode)
+- **Stop Timer**: Click the STOP button or click the active timer card
+- **Add Projects**: Click "Add Project Group" to organize timers by project
+- **Toggle Compact Mode**: Use the compact mode button for a streamlined view
+- **View Daily Total**: See your total tracked time at the top of the page
+
+## Technical Implementation Details
 
 **Timer State Management**:
 - All timer elapsed time state is managed in the parent `MultiTimer` component.
