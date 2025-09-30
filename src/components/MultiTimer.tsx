@@ -211,13 +211,13 @@ export default function MultiTimer() {
         <div className="flex flex-wrap items-center gap-3">
           <button
             onClick={() => setIsCompact((prev) => !prev)}
-            className="rounded-md border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-600 transition hover:border-teal-400 hover:text-teal-500 dark:border-gray-700 dark:text-gray-300 dark:hover:border-teal-400 dark:hover:text-teal-300"
+            className="rounded-md border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-600 transition hover:border-teal-400 hover:text-teal-500 dark:border-gray-700 dark:text-gray-300 dark:hover:border-teal-400 dark:hover:text-teal-300 cursor-pointer"
           >
             {isCompact ? "Exit Compact" : "Compact Mode"}
           </button>
           <button
             onClick={addGroup}
-            className="flex items-center gap-2 rounded-md bg-teal-400 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-500"
+            className="flex items-center gap-2 rounded-md bg-teal-400 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-500 cursor-pointer"
             style={{backgroundColor: "#01D9B5"}}
           >
             <svg
@@ -256,14 +256,14 @@ export default function MultiTimer() {
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => addTimerToGroup(group.id)}
-                  className="rounded-md border border-teal-400 px-3 py-2 text-xs font-semibold text-teal-600 transition hover:bg-teal-50 dark:text-teal-300 dark:hover:bg-teal-500/10"
+                  className="rounded-md border border-teal-400 px-3 py-2 text-xs font-semibold text-teal-600 transition hover:bg-teal-50 dark:text-teal-300 dark:hover:bg-teal-500/10 cursor-pointer"
                 >
                   Add Timer
                 </button>
                 {groups.length > 1 && (
                   <button
                     onClick={() => removeGroup(group.id)}
-                    className="rounded-md border border-red-200 px-3 py-2 text-xs font-semibold text-red-500 transition hover:bg-red-50 dark:border-red-500/40 dark:text-red-400 dark:hover:bg-red-500/10"
+                    className="rounded-md border border-red-200 px-3 py-2 text-xs font-semibold text-red-500 transition hover:bg-red-50 dark:border-red-500/40 dark:text-red-400 dark:hover:bg-red-500/10 cursor-pointer"
                   >
                     Remove
                   </button>
@@ -279,7 +279,7 @@ export default function MultiTimer() {
                     {group.timers.length > 1 && (
                       <button
                         onClick={() => removeTimerFromGroup(group.id, timer.id)}
-                        className="absolute right-2 top-2 z-10 rounded-full bg-red-500/90 p-1 text-white shadow hover:bg-red-500"
+                        className="absolute right-2 top-2 z-10 rounded-full bg-red-500/90 p-1 text-white shadow hover:bg-red-500 cursor-pointer"
                         title="Remove timer"
                       >
                         <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor">

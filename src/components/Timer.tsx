@@ -111,7 +111,7 @@ export default function Timer({
       <button
         type="button"
         onClick={toggleTimer}
-        className={`flex h-full flex-col gap-3 rounded-xl border border-gray-200 bg-white p-3 text-left shadow-sm transition hover:border-teal-400 hover:shadow-md focus:outline-none dark:border-gray-700 dark:bg-gray-800 ${activeIndicatorStyle}`}
+        className={`flex h-full flex-col gap-3 rounded-xl border border-gray-200 bg-white p-3 text-left shadow-sm transition hover:border-teal-400 hover:shadow-md focus:outline-none dark:border-gray-700 dark:bg-gray-800 cursor-pointer ${activeIndicatorStyle}`}
         style={activeRingStyle}
       >
         <span className="font-mono text-2xl font-light text-gray-900 dark:text-gray-100">
@@ -170,7 +170,7 @@ export default function Timer({
 
       <button
         onClick={toggleTimer}
-        className="w-full rounded-md bg-teal-400 px-3 py-2 text-sm font-semibold text-white transition hover:bg-teal-500"
+        className="w-full rounded-md bg-teal-400 px-3 py-2 text-sm font-semibold text-white transition hover:bg-teal-500 cursor-pointer"
         style={{
           backgroundColor: isRunning && isActive ? "#FF7F50" : "#01D9B5",
         }}
