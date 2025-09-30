@@ -35,6 +35,10 @@ The six developers at Dappit software development agency bill client work based 
   - [x] Added group-level add/remove actions and per-group timers
   - [x] Enabled responsive grid layouts supporting dense timer rows
   - [x] Added compact mode toggle with streamlined daily total display
+- [x] **Timer Persistence**
+  - [x] Store timer groups, tasks, notes, and layout preference in `localStorage`
+  - [x] Resume in-progress timers across refreshes with `sessionStorage`
+  - [x] Guard against corrupt storage payloads with runtime normalisation
 - [x] **Shared Layout & Navigation**
   - [x] Root layout wraps pages with branded shell and Navbar
   - [x] Navbar renders logo with home navigation and dark/light support
@@ -146,7 +150,6 @@ interface TimerGroup {
 
 ### 🔄 In Progress Requirements
 3. **Timer history**: Storage of start/stop timestamps
-4. **Persistence**: Maintaining timer state across browser sessions
 
 ## Immediate Next Steps
 
@@ -155,5 +158,5 @@ interface TimerGroup {
 3. ~~Add stopwatch to the homepage~~ ✅ **COMPLETED**
 4. ~~Get Today's Total time working~~ ✅ **COMPLETED**
 5. Implement timer history and timestamp logging
-6. Add local storage persistence for timer state
+6. ~~Add local storage persistence for timer state~~ ✅ **COMPLETED**
 7. Implement daily total calculation from actual timer sessions
