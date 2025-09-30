@@ -1,6 +1,6 @@
 "use client";
 
-import {useState, useEffect, useRef} from "react";
+import {useEffect, useRef} from "react";
 import type {CSSProperties} from "react";
 
 interface TimerProps {
@@ -30,7 +30,6 @@ export default function Timer({
   onStop,
   isActive = false,
 }: TimerProps) {
-  const [isRunning, setIsRunning] = useState(false);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Format time to HH:MM:SS
@@ -43,34 +42,18 @@ export default function Timer({
       .padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   };
 
-  // Start timer
-  const startTimer = () => {
-    if (!isRunning) {
-      setIsRunning(true);
-      onStart?.(id);
-    }
-  };
-
-  // Stop timer
-  const stopTimer = () => {
-    if (isRunning) {
-      setIsRunning(false);
-      onStop?.(id);
-    }
-  };
-
   // Toggle timer
   const toggleTimer = () => {
-    if (isRunning) {
-      stopTimer();
+    if (isActive) {
+      onStop?.(id);
     } else {
-      startTimer();
+      onStart?.(id);
     }
   };
 
   // Effect to handle timer counting
   useEffect(() => {
-    if (isRunning && isActive) {
+    if (isActive) {
       intervalRef.current = setInterval(() => {
         onElapsedChange(id, elapsed + 1);
       }, 1000);
@@ -86,18 +69,11 @@ export default function Timer({
         clearInterval(intervalRef.current);
       }
     };
-    // Only depend on isRunning, isActive, elapsed
+    // Only depend on isActive, elapsed
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isRunning, isActive, elapsed]);
+  }, [isActive, elapsed]);
 
-  // Stop timer if not active but running
-  useEffect(() => {
-    if (isRunning && !isActive) {
-      setIsRunning(false);
-    }
-  }, [isActive, isRunning]);
-
-  const isHighlighted = isRunning && isActive;
+  const isHighlighted = isActive;
   const activeIndicatorStyle = isHighlighted ? "ring-2 ring-offset-2" : "";
   const activeRingStyle = isHighlighted
     ? ({"--tw-ring-color": "#01D9B5"} as CSSProperties)
@@ -139,11 +115,11 @@ export default function Timer({
       <div className="flex items-center gap-2">
         <div
           className={`h-2 w-2 rounded-full ${
-            isRunning && isActive ? "bg-teal-400" : "bg-gray-300"
+            isActive ? "bg-teal-400" : "bg-gray-300"
           }`}
         />
         <span className="text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">
-          {isRunning && isActive ? "Running" : "Idle"}
+          {isActive ? "Running" : "Idle"}
         </span>
       </div>
 
@@ -172,10 +148,10 @@ export default function Timer({
         onClick={toggleTimer}
         className="w-full rounded-md bg-teal-400 px-3 py-2 text-sm font-semibold text-white transition hover:bg-teal-500 cursor-pointer"
         style={{
-          backgroundColor: isRunning && isActive ? "#FF7F50" : "#01D9B5",
+          backgroundColor: isActive ? "#FF7F50" : "#01D9B5",
         }}
       >
-        {isRunning && isActive ? "Stop" : "Start"}
+        {isActive ? "Stop" : "Start"}
       </button>
     </div>
   );
