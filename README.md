@@ -19,28 +19,25 @@ The six developers at Dappit software development agency bill client work based 
 ## Work Completed So Far
 
 - [x] Next.js project initialization
-- [x] Connection with GitHub
-- [x] Connection with Vercel
-- [x] Consolidate app styling with Dappit brand guidelines
+- [x] Connection with GitHub & Vercel
+- [x] Consolidated styling with Dappit brand guidelines
   - [x] Implemented Poppins font (primary Dappit typeface)
-  - [x] Applied Dappit color palette (#202020, #F3F3F3, #01D9B5, #FF7F50)
-  - [x] Set up proper typography with recommended letter spacing and line height
-  - [x] Moved Dappit logos to public folder
-  - [x] Created minimal, professional homepage design
-  - [x] Configured Tailwind with Dappit brand colors
-- [x] **Core Timer Functionality**
-  - [x] Created Timer component with full stopwatch functionality
-  - [x] Created MultiTimer component for managing multiple timers
-  - [x] Implemented exclusive timer operation (only one runs at a time)
-  - [x] Added project and task selection dropdowns
-  - [x] Added notes field for detailed work descriptions
-  - [x] Added billable time tracking checkbox
-  - [x] Integrated timer components into homepage
-  - [x] Fixed light/dark mode visibility issues
-  - [x] Optimized layout to prevent scrolling
+  - [x] Applied Dappit palette (#202020, #F3F3F3, #01D9B5, #FF7F50)
+  - [x] Moved Dappit logos to public folder and created a minimal homepage
+  - [x] Configured Tailwind utilities for brand colors
+- [x] **Timer Experience**
+  - [x] Created Timer component with exclusive start/stop behaviour
+  - [x] Added compact and standard layouts with visual active states
+  - [x] Exposed task and notes fields per timer, with notes-only compact view
+  - [x] Enabled timer cards to run/stop on click in compact mode
+- [x] **Timer Management**
+  - [x] Restructured state into project-based timer groups
+  - [x] Added group-level add/remove actions and per-group timers
+  - [x] Enabled responsive grid layouts supporting dense timer rows
+  - [x] Added compact mode toggle with streamlined daily total display
 - [x] **Shared Layout & Navigation**
-  - [x] Moved branded header into root layout for consistent experience
-  - [x] Created reusable Navbar component with home-linking logo
+  - [x] Root layout wraps pages with branded shell and Navbar
+  - [x] Navbar renders logo with home navigation and dark/light support
 
 ## Architecture & Components
 
@@ -58,37 +55,34 @@ src/
 ```
 
 ### Timer.tsx
-**Purpose**: Individual stopwatch component with project tracking
+**Purpose**: Individual stopwatch card that adapts between full and compact views.
 **Key Features**:
-- Real-time HH:MM:SS timer display (elapsed time is now managed by the parent `MultiTimer` component)
-- Project name dropdown (Dappit Internal, Client Projects, Marketing, etc.)
-- Task name dropdown (Development, Code Review, Testing, etc.)
-- Notes textarea for work details
-- Billable checkbox (default: checked)
-- START/STOP button with color-coded states
-- Visual status indicator (running/stopped)
+- Real-time HH:MM:SS display (elapsed time controlled by `MultiTimer`)
+- Standard view: task input, notes textarea, and start/stop CTA
+- Compact view: clickable card showing elapsed time and notes label only
+- Active timer highlights with turquoise ring and coral stop state
 
 **Props**:
 - `id`: Unique timer identifier
-- `elapsed`: Elapsed time in seconds (controlled by parent)
-- `onElapsedChange`: Callback to update elapsed time in parent
-- `onStart`: Callback when timer starts
-- `onStop`: Callback when timer stops
-- `isActive`: Boolean indicating if this timer is the active one
+- `elapsed`: Elapsed time in seconds
+- `taskName`, `notes`: Controlled text inputs from parent
+- `isCompact`: Switches between card layouts
+- `onElapsedChange`, `onTaskChange`, `onNotesChange`
+- `onStart`, `onStop`, `isActive`
 
 ### MultiTimer.tsx
-**Purpose**: Manages multiple Timer components, enforces exclusive operation, and now centrally manages all timer state.
+**Purpose**: Group-based timer manager with compact toggle and daily summary.
 **Key Features**:
-- Daily total time display (sum of all timers, live-updating and accurate)
-- Add/remove timer functionality
-- Ensures only one timer runs at a time
-- Responsive grid layout for multiple timers
-- User instructions and guidance
+- Daily total display with dense compact variant
+- Project groups containing multiple timers
+- Add/remove project groups and timers
+- Compact toggle that tightens spacing and switches timer cards
+- Responsive grid supporting high timer counts per row
 
 **State Management**:
-- `timers`: Array of timer data objects, each with `id`, `name`, and `elapsed` (seconds)
-- `activeTimerId`: ID of currently running timer
-- `totalDailyTime`: Computed as the sum of all timers' `elapsed` values
+- `groups`: Array of project objects `{id, projectName, timers[]}`
+- `activeTimerId`: Tracks which timer is currently running
+- `isCompact`: Global toggle for compact presentation
 
 ### Layout.tsx & Navbar.tsx
 **Purpose**: Supply the shared application chrome, typography, and navigation.
@@ -126,12 +120,19 @@ src/
 - Dark/light mode support with proper contrast
 - Inline styles used for custom Dappit colors to ensure visibility
 
-**Form Data Structure**:
+**Data Structures**:
 ```typescript
 interface TimerData {
   id: string;
-  name: string;
-  // Future: projectName, taskName, notes, billable, timeEntries
+  taskName: string;
+  notes: string;
+  elapsed: number;
+}
+
+interface TimerGroup {
+  id: string;
+  projectName: string;
+  timers: TimerData[];
 }
 ```
 
