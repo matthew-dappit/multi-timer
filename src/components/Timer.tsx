@@ -31,6 +31,8 @@ export default function Timer({
   isActive = false,
 }: TimerProps) {
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const startTimeRef = useRef<number | null>(null);
+  const elapsedAtStartRef = useRef<number>(0);
 
   // Format time to HH:MM:SS
   const formatTime = (seconds: number): string => {
@@ -54,14 +56,24 @@ export default function Timer({
   // Effect to handle timer counting
   useEffect(() => {
     if (isActive) {
+      // Store the start time and elapsed time when timer starts
+      startTimeRef.current = Date.now();
+      elapsedAtStartRef.current = elapsed;
+
       intervalRef.current = setInterval(() => {
-        onElapsedChange(id, elapsed + 1);
+        // Calculate elapsed time based on actual time passed
+        const now = Date.now();
+        const secondsPassed = Math.floor((now - startTimeRef.current!) / 1000);
+        const newElapsed = elapsedAtStartRef.current + secondsPassed;
+        onElapsedChange(id, newElapsed);
       }, 1000);
     } else {
+      // Clean up interval when timer stops
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
         intervalRef.current = null;
       }
+      startTimeRef.current = null;
     }
 
     return () => {
@@ -69,9 +81,7 @@ export default function Timer({
         clearInterval(intervalRef.current);
       }
     };
-    // Only depend on isActive, elapsed
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isActive, elapsed]);
+  }, [isActive, id, onElapsedChange]);
 
   const isHighlighted = isActive;
   const activeIndicatorStyle = isHighlighted ? "ring-2 ring-offset-2" : "";
