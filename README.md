@@ -38,6 +38,9 @@ The six developers at Dappit software development agency bill client work based 
   - [x] Integrated timer components into homepage
   - [x] Fixed light/dark mode visibility issues
   - [x] Optimized layout to prevent scrolling
+- [x] **Shared Layout & Navigation**
+  - [x] Moved branded header into root layout for consistent experience
+  - [x] Created reusable Navbar component with home-linking logo
 
 ## Architecture & Components
 
@@ -45,10 +48,11 @@ The six developers at Dappit software development agency bill client work based 
 ```
 src/
 ├── app/
-│   ├── page.tsx          # Main homepage with header and MultiTimer
-│   ├── layout.tsx        # Root layout with Poppins font
+│   ├── page.tsx          # Home route rendering the multi-timer dashboard
+│   ├── layout.tsx        # Root layout with Poppins font and shared shell
 │   └── globals.css       # Global styles and Tailwind imports
 ├── components/
+│   ├── Navbar.tsx        # Branded navigation bar shared across pages
 │   ├── Timer.tsx         # Individual timer component
 │   └── MultiTimer.tsx    # Timer management and daily total
 ```
@@ -56,7 +60,7 @@ src/
 ### Timer.tsx
 **Purpose**: Individual stopwatch component with project tracking
 **Key Features**:
-- Real-time HH:MM:SS timer display
+- Real-time HH:MM:SS timer display (elapsed time is now managed by the parent `MultiTimer` component)
 - Project name dropdown (Dappit Internal, Client Projects, Marketing, etc.)
 - Task name dropdown (Development, Code Review, Testing, etc.)
 - Notes textarea for work details
@@ -66,36 +70,48 @@ src/
 
 **Props**:
 - `id`: Unique timer identifier
+- `elapsed`: Elapsed time in seconds (controlled by parent)
+- `onElapsedChange`: Callback to update elapsed time in parent
 - `onStart`: Callback when timer starts
-- `onStop`: Callback when timer stops  
+- `onStop`: Callback when timer stops
 - `isActive`: Boolean indicating if this timer is the active one
 
 ### MultiTimer.tsx
-**Purpose**: Manages multiple Timer components and enforces exclusive operation
+**Purpose**: Manages multiple Timer components, enforces exclusive operation, and now centrally manages all timer state.
 **Key Features**:
-- Daily total time display (sum of all timers)
+- Daily total time display (sum of all timers, live-updating and accurate)
 - Add/remove timer functionality
 - Ensures only one timer runs at a time
 - Responsive grid layout for multiple timers
 - User instructions and guidance
 
 **State Management**:
-- `timers`: Array of timer data objects
+- `timers`: Array of timer data objects, each with `id`, `name`, and `elapsed` (seconds)
 - `activeTimerId`: ID of currently running timer
-- `totalDailyTime`: Cumulative time across all timers
+- `totalDailyTime`: Computed as the sum of all timers' `elapsed` values
+
+### Layout.tsx & Navbar.tsx
+**Purpose**: Supply the shared application chrome, typography, and navigation.
+**Key Features**:
+- Applies the Poppins font globally and wraps all pages with the branded background shell
+- Renders `<Navbar />` above page content so every route shares the same header
+- Navbar swaps between light and dark logos and links back to `/` when the logo is clicked
 
 ### Component Interaction Flow
 1. **User starts Timer A**: `Timer.tsx` calls `onStart(id)` → `MultiTimer.tsx` sets `activeTimerId`
 2. **User starts Timer B**: `MultiTimer.tsx` automatically sets Timer A's `isActive` to false
 3. **Timer A stops**: React effect in `Timer.tsx` detects `!isActive` and stops the timer
 4. **Timer B becomes active**: Only Timer B continues counting
+5. **Timer increments**: Each second, `Timer.tsx` calls `onElapsedChange(id, newElapsed)` to update the parent, which updates the timer's `elapsed` value in state.
+6. **Today's Total**: `MultiTimer.tsx` always displays the sum of all timers' `elapsed` values, live-updating as timers run.
 
 ### Technical Implementation Details
 
 **Timer State Management**:
-- Each Timer component maintains its own time state using `useState`
-- Timer counting uses `setInterval` with 1-second increments
-- React `useEffect` hooks manage timer lifecycle and cleanup
+- All timer elapsed time state is managed in the parent `MultiTimer` component.
+- Each Timer receives its `elapsed` value and a callback to update it from the parent.
+- Timer counting uses `setInterval` in the child, but updates the parent state every second.
+- React `useEffect` hooks manage timer lifecycle and cleanup.
 
 **Exclusive Operation Logic**:
 - MultiTimer maintains `activeTimerId` state
@@ -123,7 +139,7 @@ interface TimerData {
 
 ### ✅ Completed Requirements
 1. **Exclusive timer operation**: ✅ Starting any timer pauses all others
-2. **Daily total display**: ✅ Central display shows cumulative time
+2. **Daily total display**: ✅ Central display shows cumulative time (now live and correct)
 3. **Project/task tracking**: ✅ Dropdown fields for organization
 4. **Professional design**: ✅ Dappit brand colors and responsive layout
 
@@ -136,7 +152,7 @@ interface TimerData {
 1. ~~Consolidate app styling~~ ✅ **COMPLETED**
 2. ~~Create basic stopwatch component~~ ✅ **COMPLETED**
 3. ~~Add stopwatch to the homepage~~ ✅ **COMPLETED**
-4. Get Today's Total time working
+4. ~~Get Today's Total time working~~ ✅ **COMPLETED**
 5. Implement timer history and timestamp logging
 6. Add local storage persistence for timer state
 7. Implement daily total calculation from actual timer sessions
