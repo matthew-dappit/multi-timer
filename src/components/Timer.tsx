@@ -8,6 +8,7 @@ interface TimerProps {
   elapsed: number;
   taskName: string;
   notes: string;
+  isCompact: boolean;
   onElapsedChange: (id: string, newElapsed: number) => void;
   onTaskChange: (id: string, task: string) => void;
   onNotesChange: (id: string, notes: string) => void;
@@ -21,6 +22,7 @@ export default function Timer({
   elapsed,
   taskName,
   notes,
+  isCompact,
   onElapsedChange,
   onTaskChange,
   onNotesChange,
@@ -95,10 +97,39 @@ export default function Timer({
     }
   }, [isActive, isRunning]);
 
-  const activeIndicatorStyle = isRunning && isActive ? "ring-2 ring-offset-2" : "";
-  const activeRingStyle = isRunning && isActive
+  const isHighlighted = isRunning && isActive;
+  const activeIndicatorStyle = isHighlighted ? "ring-2 ring-offset-2" : "";
+  const activeRingStyle = isHighlighted
     ? ({"--tw-ring-color": "#01D9B5"} as CSSProperties)
     : undefined;
+  const formattedTime = formatTime(elapsed);
+  const hasNotes = notes.trim() !== "";
+  const notesLabel = hasNotes ? notes : "Add note";
+
+  if (isCompact) {
+    return (
+      <button
+        type="button"
+        onClick={toggleTimer}
+        className={`flex h-full flex-col gap-3 rounded-xl border border-gray-200 bg-white p-3 text-left shadow-sm transition hover:border-teal-400 hover:shadow-md focus:outline-none dark:border-gray-700 dark:bg-gray-800 ${activeIndicatorStyle}`}
+        style={activeRingStyle}
+      >
+        <span className="font-mono text-2xl font-light text-gray-900 dark:text-gray-100">
+          {formattedTime}
+        </span>
+
+        <div
+          className={`break-words text-sm font-medium ${
+            hasNotes
+              ? "text-gray-700 dark:text-gray-200"
+              : "text-gray-400 dark:text-gray-500"
+          }`}
+        >
+          {notesLabel}
+        </div>
+      </button>
+    );
+  }
 
   return (
     <div
@@ -125,7 +156,7 @@ export default function Timer({
 
       <div className="text-center">
         <div className="font-mono text-3xl font-light text-gray-900 dark:text-gray-100">
-          {formatTime(elapsed)}
+          {formattedTime}
         </div>
       </div>
 

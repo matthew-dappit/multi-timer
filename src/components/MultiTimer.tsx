@@ -34,6 +34,7 @@ const createGroup = (index: number): TimerGroup => ({
 export default function MultiTimer() {
   const [groups, setGroups] = useState<TimerGroup[]>([createGroup(1)]);
   const [activeTimerId, setActiveTimerId] = useState<string | null>(null);
+  const [isCompact, setIsCompact] = useState(false);
 
   const timerKey = (groupId: string, timerId: string) => `${groupId}:${timerId}`;
 
@@ -171,49 +172,74 @@ export default function MultiTimer() {
     return sum + groupTotal;
   }, 0);
 
-  return (
-    <div className="flex h-full w-full flex-col gap-8">
-      <div className="rounded-2xl bg-gray-900 p-6 text-center text-white shadow-lg dark:bg-dappit-black">
-        <h2 className="text-lg font-medium">Today&apos;s Total</h2>
-        <div className="mt-3 font-mono text-5xl font-light">
-          {formatTime(totalDailyTime)}
-        </div>
-        <p className="mt-2 text-sm text-gray-300 dark:text-dappit-gray">
-          Across all timer groups
-        </p>
+  const containerGap = isCompact ? "gap-4" : "gap-8";
+  const totalSummary = isCompact ? (
+    <div className="rounded-2xl bg-gray-900 p-4 text-center font-mono text-4xl font-light text-white shadow-sm dark:bg-dappit-black">
+      {formatTime(totalDailyTime)}
+    </div>
+  ) : (
+    <div className="rounded-2xl bg-gray-900 p-6 text-center text-white shadow-lg dark:bg-dappit-black">
+      <h2 className="text-lg font-medium">Today&apos;s Total</h2>
+      <div className="mt-3 font-mono text-5xl font-light">
+        {formatTime(totalDailyTime)}
       </div>
+      <p className="mt-2 text-sm text-gray-300 dark:text-dappit-gray">
+        Across all timer groups
+      </p>
+    </div>
+  );
+
+  const gridClasses = isCompact
+    ? "grid gap-4 md:grid-cols-3 xl:grid-cols-4"
+    : "grid gap-6 md:grid-cols-2 xl:grid-cols-3";
+
+  return (
+    <div className={`flex h-full w-full flex-col ${containerGap}`}>
+      {totalSummary}
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
             Timer Groups
           </h3>
-          <p className="text-sm text-gray-500 dark:text-gray-400">
-            Organise by project, then track tasks inside each group.
-          </p>
+          {!isCompact && (
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Organise by project, then track tasks inside each group.
+            </p>
+          )}
         </div>
-        <button
-          onClick={addGroup}
-          className="flex items-center gap-2 rounded-md bg-teal-400 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-500"
-          style={{backgroundColor: "#01D9B5"}}
-        >
-          <svg
-            className="h-4 w-4"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            onClick={() => setIsCompact((prev) => !prev)}
+            className="rounded-md border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-600 transition hover:border-teal-400 hover:text-teal-500 dark:border-gray-700 dark:text-gray-300 dark:hover:border-teal-400 dark:hover:text-teal-300"
           >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-          Add Project Group
-        </button>
+            {isCompact ? "Exit Compact" : "Compact Mode"}
+          </button>
+          <button
+            onClick={addGroup}
+            className="flex items-center gap-2 rounded-md bg-teal-400 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-500"
+            style={{backgroundColor: "#01D9B5"}}
+          >
+            <svg
+              className="h-4 w-4"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            Add Project Group
+          </button>
+        </div>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+      <div className={gridClasses}>
         {groups.map((group, index) => (
           <div
             key={group.id}
-            className="flex min-h-[320px] flex-col gap-5 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition hover:shadow-md dark:border-gray-700 dark:bg-gray-900/50"
+            className={`flex flex-col rounded-2xl border border-gray-200 bg-white shadow-sm transition hover:shadow-md dark:border-gray-700 dark:bg-gray-900/50 ${
+              isCompact ? "gap-4 p-4" : "min-h-[320px] gap-5 p-6"
+            }`}
           >
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="flex-1">
@@ -267,6 +293,7 @@ export default function MultiTimer() {
                       elapsed={timer.elapsed}
                       taskName={timer.taskName}
                       notes={timer.notes}
+                      isCompact={isCompact}
                       onElapsedChange={(id, newElapsed) =>
                         handleElapsedChange(group.id, id, newElapsed)
                       }
