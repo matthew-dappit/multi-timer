@@ -2,6 +2,9 @@
 
 import {useEffect, useRef, useState} from "react";
 import Timer from "./Timer";
+import TimeEntryModal from "./TimeEntryModal";
+import TimeHistoryModal from "./TimeHistoryModal";
+import EditTimeSlotModal from "./EditTimeSlotModal";
 
 // Time tracking event - immutable record of a timer session
 interface TimeEvent {
@@ -99,6 +102,22 @@ export default function MultiTimer() {
     null
   );
   const hasHydrated = useRef(false);
+
+  // Modal state
+  const [timeEntryModal, setTimeEntryModal] = useState<{
+    isOpen: boolean;
+    groupId: string;
+    timerId: string;
+  } | null>(null);
+  const [timeHistoryModal, setTimeHistoryModal] = useState<{
+    isOpen: boolean;
+    groupId: string;
+    timerId: string;
+  } | null>(null);
+  const [editTimeSlotModal, setEditTimeSlotModal] = useState<{
+    isOpen: boolean;
+    eventId: string;
+  } | null>(null);
 
   // Helper: Calculate elapsed time from events
   const calculateElapsedFromEvents = (
@@ -360,6 +379,142 @@ export default function MultiTimer() {
     setRunningSession(null);
   };
 
+  // Manual time entry handlers
+  const handleOpenTimeEntry = (groupId: string, timerId: string) => {
+    setTimeEntryModal({isOpen: true, groupId, timerId});
+  };
+
+  const handleAddManualTime = (
+    groupId: string,
+    timerId: string,
+    startTime: number,
+    endTime: number
+  ) => {
+    // Find the timer and group
+    const group = groups.find((g) => g.id === groupId);
+    const timer = group?.timers.find((t) => t.id === timerId);
+    if (!group || !timer) return;
+
+    // Create new time event
+    const newEvent: TimeEvent = {
+      id: createId(),
+      groupId,
+      timerId,
+      projectName: group.projectName,
+      taskName: timer.taskName,
+      notes: timer.notes,
+      startTime,
+      endTime,
+    };
+
+    // Add to time events
+    const updatedEvents = [...timeEvents, newEvent];
+    setTimeEvents(updatedEvents);
+
+    // Recalculate elapsed time for this timer
+    setGroups((prevGroups) =>
+      prevGroups.map((g) =>
+        g.id === groupId
+          ? {
+              ...g,
+              timers: g.timers.map((t) =>
+                t.id === timerId
+                  ? {
+                      ...t,
+                      elapsed: calculateElapsedFromEvents(
+                        timerId,
+                        updatedEvents,
+                        runningSession
+                      ),
+                    }
+                  : t
+              ),
+            }
+          : g
+      )
+    );
+  };
+
+  const handleOpenTimeHistory = (groupId: string, timerId: string) => {
+    setTimeHistoryModal({isOpen: true, groupId, timerId});
+  };
+
+  const handleEditTimeSlot = (eventId: string) => {
+    setEditTimeSlotModal({isOpen: true, eventId});
+    setTimeHistoryModal(null); // Close history modal
+  };
+
+  const handleSaveTimeSlot = (
+    eventId: string,
+    startTime: number,
+    endTime: number
+  ) => {
+    // Update the event
+    const updatedEvents = timeEvents.map((event) =>
+      event.id === eventId ? {...event, startTime, endTime} : event
+    );
+    setTimeEvents(updatedEvents);
+
+    // Recalculate elapsed times for affected timer
+    const event = timeEvents.find((e) => e.id === eventId);
+    if (event) {
+      setGroups((prevGroups) =>
+        prevGroups.map((group) =>
+          group.id === event.groupId
+            ? {
+                ...group,
+                timers: group.timers.map((timer) =>
+                  timer.id === event.timerId
+                    ? {
+                        ...timer,
+                        elapsed: calculateElapsedFromEvents(
+                          timer.id,
+                          updatedEvents,
+                          runningSession
+                        ),
+                      }
+                    : timer
+                ),
+              }
+            : group
+        )
+      );
+    }
+  };
+
+  const handleDeleteTimeSlot = (eventId: string) => {
+    // Find the event to get timer info
+    const event = timeEvents.find((e) => e.id === eventId);
+    if (!event) return;
+
+    // Remove the event
+    const updatedEvents = timeEvents.filter((e) => e.id !== eventId);
+    setTimeEvents(updatedEvents);
+
+    // Recalculate elapsed time for affected timer
+    setGroups((prevGroups) =>
+      prevGroups.map((group) =>
+        group.id === event.groupId
+          ? {
+              ...group,
+              timers: group.timers.map((timer) =>
+                timer.id === event.timerId
+                  ? {
+                      ...timer,
+                      elapsed: calculateElapsedFromEvents(
+                        timer.id,
+                        updatedEvents,
+                        runningSession
+                      ),
+                    }
+                  : timer
+              ),
+            }
+          : group
+      )
+    );
+  };
+
   const handleTaskChange = (groupId: string, timerId: string, task: string) => {
     updateGroups((previous) =>
       previous.map((group) =>
@@ -614,6 +769,12 @@ export default function MultiTimer() {
                       }
                       onStart={() => handleTimerStart(group.id, timer.id)}
                       onStop={handleTimerStop}
+                      onOpenTimeEntry={() =>
+                        handleOpenTimeEntry(group.id, timer.id)
+                      }
+                      onOpenTimeHistory={() =>
+                        handleOpenTimeHistory(group.id, timer.id)
+                      }
                     />
                   </div>
                 );
@@ -622,6 +783,99 @@ export default function MultiTimer() {
           </div>
         ))}
       </div>
+
+      {/* Modals */}
+      {timeEntryModal &&
+        (() => {
+          const group = groups.find((g) => g.id === timeEntryModal.groupId);
+          const timer = group?.timers.find(
+            (t) => t.id === timeEntryModal.timerId
+          );
+          if (!group || !timer) return null;
+
+          return (
+            <TimeEntryModal
+              isOpen={timeEntryModal.isOpen}
+              onClose={() => setTimeEntryModal(null)}
+              onAddTime={(startTime, endTime) => {
+                handleAddManualTime(
+                  timeEntryModal.groupId,
+                  timeEntryModal.timerId,
+                  startTime,
+                  endTime
+                );
+                setTimeEntryModal(null);
+              }}
+              projectName={group.projectName}
+              taskName={timer.taskName}
+              notes={timer.notes}
+              isTimerActive={runningSession?.timerId === timer.id}
+            />
+          );
+        })()}
+
+      {timeHistoryModal &&
+        (() => {
+          const group = groups.find((g) => g.id === timeHistoryModal.groupId);
+          const timer = group?.timers.find(
+            (t) => t.id === timeHistoryModal.timerId
+          );
+          if (!group || !timer) return null;
+
+          const timerEvents = timeEvents.filter(
+            (e) => e.timerId === timeHistoryModal.timerId
+          );
+          const runningEventId =
+            runningSession?.timerId === timer.id
+              ? runningSession.eventId
+              : null;
+
+          return (
+            <TimeHistoryModal
+              isOpen={timeHistoryModal.isOpen}
+              onClose={() => setTimeHistoryModal(null)}
+              onAddTime={() => {
+                setTimeHistoryModal(null);
+                setTimeEntryModal({
+                  isOpen: true,
+                  groupId: timeHistoryModal.groupId,
+                  timerId: timeHistoryModal.timerId,
+                });
+              }}
+              onEditEvent={handleEditTimeSlot}
+              onStopTimer={handleTimerStop}
+              projectName={group.projectName}
+              taskName={timer.taskName}
+              notes={timer.notes}
+              events={timerEvents}
+              runningEventId={runningEventId}
+            />
+          );
+        })()}
+
+      {editTimeSlotModal &&
+        (() => {
+          const event = timeEvents.find(
+            (e) => e.id === editTimeSlotModal.eventId
+          );
+          if (!event) return null;
+
+          return (
+            <EditTimeSlotModal
+              isOpen={editTimeSlotModal.isOpen}
+              onClose={() => setEditTimeSlotModal(null)}
+              onSave={(eventId, startTime, endTime) => {
+                handleSaveTimeSlot(eventId, startTime, endTime);
+                setEditTimeSlotModal(null);
+              }}
+              onDelete={(eventId) => {
+                handleDeleteTimeSlot(eventId);
+                setEditTimeSlotModal(null);
+              }}
+              event={event}
+            />
+          );
+        })()}
     </div>
   );
 }
