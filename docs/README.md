@@ -11,6 +11,7 @@ A time tracking application for development agencies to track billable hours acr
 ### Core Documentation
 - **[Architecture](./architecture.md)** - System design and technical implementation
 - **[Features](./features.md)** - Current capabilities and roadmap
+- **[Insights Feature](./insights-feature.md)** - Analytics and time visualization
 - **[API Reference](./api-reference.md)** - Component props and utility functions
 
 ### Guides
@@ -30,9 +31,10 @@ Multi-Timer is a web application designed for development agencies to track bill
 
 - ⏱️ **Event-Based Time Tracking** - Accurate to the second, immune to browser throttling
 - 📁 **Project Organization** - Group timers by project or client
-- 💾 **Persistent State** - Never lose your time data
+- � **Visual Analytics** - Hourly heatmaps and project breakdowns
+- �💾 **Persistent State** - Never lose your time data
 - 🔐 **User Authentication** - Secure user accounts with Xano backend
-- 📊 **Complete History** - Audit trail of all work sessions
+- � **Complete History** - Audit trail of all work sessions
 
 ### Key Concepts
 

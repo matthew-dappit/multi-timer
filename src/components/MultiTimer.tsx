@@ -144,6 +144,14 @@ export default function MultiTimer() {
   const timerKey = (groupId: string, timerId: string) =>
     `${groupId}:${timerId}`;
 
+  // Debug: Log active timer changes
+  useEffect(() => {
+    if (hasHydrated.current) {
+      console.log("Active Timer Changed:", activeTimerId);
+      console.log("Active Event ID:", activeEventIdRef.current);
+    }
+  }, [activeTimerId]);
+
   // Persist time events to localStorage
   const persistTimeEvents = (events: TimeEvent[]) => {
     if (typeof window === "undefined") return;
@@ -364,61 +372,84 @@ export default function MultiTimer() {
   };
 
   const handleTimerStart = (groupId: string, timerId: string) => {
-    // Stop any currently running timer
-    if (activeEventIdRef.current) {
-      setTimeEvents((prev) =>
-        prev.map((event) =>
-          event.id === activeEventIdRef.current
-            ? {...event, endTime: Date.now()}
-            : event
-        )
-      );
-    }
+    const now = Date.now();
+    const newTimerKey = timerKey(groupId, timerId);
 
-    const key = timerKey(groupId, timerId);
-    setActiveTimerId(key);
-
-    // Create new time event
+    // Find the group and timer
     const group = groups.find((g) => g.id === groupId);
     const timer = group?.timers.find((t) => t.id === timerId);
 
-    const newEvent: TimeEvent = {
-      id: createId(),
-      groupId,
-      timerId,
-      startTime: Date.now(),
-      endTime: null,
-      taskName: timer?.taskName || "",
-      projectName: group?.projectName || "",
-    };
+    if (!group || !timer) {
+      console.error("Timer or group not found");
+      return;
+    }
 
-    setTimeEvents((prev) => [...prev, newEvent]);
-    activeEventIdRef.current = newEvent.id;
+    // Stop any currently running timer and start new one atomically
+    setTimeEvents((prev) => {
+      let updatedEvents = prev;
 
+      // End the current event if one is running
+      if (activeEventIdRef.current) {
+        updatedEvents = prev.map((event) =>
+          event.id === activeEventIdRef.current
+            ? {...event, endTime: now}
+            : event
+        );
+      }
+
+      // Create new event
+      const newEvent: TimeEvent = {
+        id: createId(),
+        groupId,
+        timerId,
+        startTime: now,
+        endTime: null,
+        taskName: timer.taskName,
+        projectName: group.projectName,
+      };
+
+      // Update the ref immediately
+      activeEventIdRef.current = newEvent.id;
+
+      return [...updatedEvents, newEvent];
+    });
+
+    // Set active timer
+    setActiveTimerId(newTimerKey);
+
+    // Persist session
     persistRunningSession({
       groupId,
       timerId,
-      startedAt: Date.now(),
+      startedAt: now,
     });
   };
 
   const handleTimerStop = (groupId: string, timerId: string) => {
-    if (activeTimerId === timerKey(groupId, timerId)) {
-      // End the current time event
-      if (activeEventIdRef.current) {
-        setTimeEvents((prev) =>
-          prev.map((event) =>
-            event.id === activeEventIdRef.current
-              ? {...event, endTime: Date.now()}
-              : event
-          )
-        );
-        activeEventIdRef.current = null;
-      }
+    const key = timerKey(groupId, timerId);
 
-      setActiveTimerId(null);
-      persistRunningSession(null);
+    if (activeTimerId !== key) {
+      console.warn("Attempting to stop a timer that isn't active");
+      return;
     }
+
+    const now = Date.now();
+
+    // End the current time event
+    if (activeEventIdRef.current) {
+      setTimeEvents((prev) =>
+        prev.map((event) =>
+          event.id === activeEventIdRef.current
+            ? {...event, endTime: now}
+            : event
+        )
+      );
+      activeEventIdRef.current = null;
+    }
+
+    // Clear active timer
+    setActiveTimerId(null);
+    persistRunningSession(null);
   };
 
   const handleElapsedChange = (
