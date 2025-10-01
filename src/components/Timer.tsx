@@ -24,9 +24,7 @@ export default function Timer({
 
   if (isCompact) {
     return (
-      <div
-        className="flex h-full flex-col gap-3 rounded-xl border border-gray-200 bg-white p-3 text-left shadow-sm transition hover:border-teal-400 hover:shadow-md dark:border-gray-700 dark:bg-gray-800"
-      >
+      <div className="flex h-full flex-col gap-3 rounded-xl border border-gray-200 bg-white p-3 text-left shadow-sm transition hover:border-teal-400 hover:shadow-md dark:border-gray-700 dark:bg-gray-800">
         <span className="font-mono text-2xl font-light text-gray-900 dark:text-gray-100">
           {formattedTime}
         </span>
@@ -45,9 +43,7 @@ export default function Timer({
   }
 
   return (
-    <div
-      className="flex h-full flex-col gap-4 rounded-xl border border-gray-200 bg-white p-4 shadow-sm transition-shadow dark:border-gray-700 dark:bg-gray-800"
-    >
+    <div className="flex h-full flex-col gap-4 rounded-xl border border-gray-200 bg-white p-4 shadow-sm transition-shadow dark:border-gray-700 dark:bg-gray-800">
       <div className="flex items-center gap-2">
         <div className="h-2 w-2 rounded-full bg-gray-300" />
         <span className="text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">

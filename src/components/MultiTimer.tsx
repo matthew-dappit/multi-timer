@@ -365,9 +365,7 @@ export default function MultiTimer() {
 
       <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-700 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-300">
         <h4 className="mb-1 font-medium">Note</h4>
-        <p>
-          Timer logic has been cleared. Ready for fresh implementation.
-        </p>
+        <p>Timer logic has been cleared. Ready for fresh implementation.</p>
       </div>
     </div>
   );

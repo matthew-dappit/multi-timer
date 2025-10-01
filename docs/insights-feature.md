@@ -2,7 +2,11 @@
 
 ## Overview
 
-The **Time Insights** page provides a visual analytics dashboard for your time tracking data. It displays:
+The **Time Insights** page provides a visual analytics dashboard for your time tracking data.
+
+**Note:** This feature depends on timer tracking logic which has been cleared. Once new timer tracking is implemented, the Insights page will need to be updated to work with the new data structure. See `docs/timer-rebuild-plan.md` for details.
+
+## Planned Features
 
 - **Daily Summary Cards**: Total time, projects worked, and total sessions
 - **Hourly Heatmap**: Visual breakdown of time spent per hour (bar chart with intensity colors)
@@ -39,9 +43,13 @@ Access the Insights page via:
 
 ## Data Source
 
-The Insights page reads from the same localStorage key as the MultiTimer component:
+**Currently Disabled:** The Insights page will need to be updated once new timer tracking logic is implemented.
+
+Previously read from:
 - Key: `multi-timer/time-events`
-- Data: Array of `TimeEvent` objects with timestamps, project names, and task names
+- Data: Array of time event objects with timestamps, project names, and task names
+
+See `docs/timer-rebuild-plan.md` for implementation details.
 
 ## Technical Details
 

@@ -2,9 +2,47 @@
 
 All notable changes to the Multi-Timer project.
 
-## [2.0.0] - October 1, 2025
+## [3.0.0] - October 1, 2025
 
-### 🎉 Major Update: Event-Based Time Tracking
+### 🔄 Major Refactor: Timer Logic Rebuild
+
+#### Removed
+- **All Timer Tracking Logic** - Cleared for fresh implementation
+  - Removed event-based time tracking system
+  - Removed all time calculation functions
+  - Removed localStorage/sessionStorage persistence for timing data
+  - Removed active timer state management
+  - Removed start/stop functionality
+  
+#### Kept
+- **UI Shell Intact** - Full project/timer management preserved
+  - Project group CRUD operations
+  - Timer CRUD operations within groups
+  - Task name and notes input fields
+  - Compact/standard view toggle
+  - All Tailwind styling and Dappit branding
+  - Responsive grid layouts
+  
+#### Documentation
+- **Deleted Old Timer Docs**
+  - Removed `docs/architecture.md` (described old event system)
+  - Removed `docs/timer-fix-explanation.md` (described old fixes)
+  - Removed `docs/timer-testing.md` (described old tests)
+  
+- **Added New Documentation**
+  - Created `docs/timer-rebuild-plan.md` with implementation guide
+  - Updated `.github/copilot-instructions.md` to reflect clean state
+  - Updated `docs/development.md` to remove old timer references
+  - Updated `docs/insights-feature.md` to note dependency on new logic
+
+#### Next Steps
+See `docs/timer-rebuild-plan.md` for implementation roadmap.
+
+---
+
+## [2.0.0] - October 1, 2025 (Deprecated)
+
+### 🎉 Major Update: Event-Based Time Tracking (Old System - Now Removed)
 
 #### Fixed
 - **Timer Accuracy Issue** - Timers now show accurate elapsed time
@@ -48,6 +86,7 @@ interface TimeEvent {
   groupId: string;
   timerId: string;
   startTime: number;       // Timestamp when started
+````
   endTime: number | null;  // Timestamp when stopped (null if running)
   taskName: string;
   projectName: string;

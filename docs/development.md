@@ -123,14 +123,14 @@ const Timer = (props: any) => { }
 **Type all function parameters and returns:**
 ```typescript
 // ✅ Good
-function calculateElapsed(events: TimeEvent[]): number {
-  return events.reduce((total, event) => {
-    // ...
-  }, 0);
+function formatTime(seconds: number): string {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  return `${hours}h ${minutes}m`;
 }
 
 // ❌ Bad
-function calculateElapsed(events) {
+function formatTime(seconds) {
   // ...
 }
 ```
@@ -153,12 +153,12 @@ export default function Timer({ id, elapsed }: TimerProps) {
 **Name event handlers consistently:**
 ```typescript
 // ✅ Good
-const handleTimerStart = (id: string) => { };
-const handleTimerStop = (id: string) => { };
+const handleTaskChange = (id: string, value: string) => { };
+const handleNotesChange = (id: string, value: string) => { };
 
 // ❌ Bad
-const startTimer = (id: string) => { };
-const stopIt = (id: string) => { };
+const changeTask = (id: string, value: string) => { };
+const updateIt = (id: string, value: string) => { };
 ```
 
 ### State Management
@@ -178,10 +178,10 @@ setTimers(timers);
 **Use refs for non-rendered values:**
 ```typescript
 // ✅ Good - doesn't cause re-render
-const activeEventIdRef = useRef<string | null>(null);
+const hasHydratedRef = useRef(false);
 
 // ❌ Bad - causes unnecessary re-renders
-const [activeEventId, setActiveEventId] = useState<string | null>(null);
+const [hasHydrated, setHasHydrated] = useState(false);
 ```
 
 ### Styling
@@ -275,29 +275,24 @@ git push origin feature/analytics-dashboard
 ### Adding a New Component
 
 ```typescript
-// src/components/AnalyticsDashboard.tsx
+// src/components/ProjectSummary.tsx
 "use client";
 
 import { useMemo } from 'react';
 
-interface AnalyticsDashboardProps {
-  timeEvents: TimeEvent[];
+interface ProjectSummaryProps {
+  projectName: string;
+  timerCount: number;
 }
 
-export default function AnalyticsDashboard({ 
-  timeEvents 
-}: AnalyticsDashboardProps) {
-  const totalHours = useMemo(() => {
-    return timeEvents.reduce((total, event) => {
-      const duration = (event.endTime ?? Date.now()) - event.startTime;
-      return total + duration / 3600000;
-    }, 0);
-  }, [timeEvents]);
-
+export default function ProjectSummary({ 
+  projectName,
+  timerCount
+}: ProjectSummaryProps) {
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-6">
-      <h2 className="text-xl font-semibold">Analytics</h2>
-      <p className="mt-2 text-3xl font-light">{totalHours.toFixed(1)}h</p>
+      <h2 className="text-xl font-semibold">{projectName}</h2>
+      <p className="mt-2 text-gray-600">{timerCount} timers</p>
     </div>
   );
 }
@@ -383,11 +378,14 @@ if (process.env.NODE_ENV === 'development') {
 
 **Issue: LocalStorage quota exceeded**
 ```typescript
-// Solution: Clear old events
-const filterTodayEvents = (events: TimeEvent[]) => {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return events.filter(e => e.startTime >= today.getTime());
+// Solution: Clear old data periodically
+const clearOldData = () => {
+  const keys = Object.keys(localStorage);
+  keys.forEach(key => {
+    if (key.startsWith('multi-timer/old-')) {
+      localStorage.removeItem(key);
+    }
+  });
 };
 ```
 
@@ -421,11 +419,11 @@ useEffect(() => {
 
 ### Manual Testing Checklist
 
-**Timer Accuracy:**
-- [ ] Start timer, wait 60s, verify shows 00:01:00
-- [ ] Start timer, switch tabs 5min, return, verify accuracy
-- [ ] Start timer, refresh page, verify resumes correctly
-- [ ] Start timer A, start timer B, verify A stops
+**Basic Functionality:**
+- [ ] Create project groups and timers
+- [ ] Edit task names and notes
+- [ ] Remove timers and groups
+- [ ] Switch between compact and standard views
 
 **Persistence:**
 - [ ] Create timers, refresh, verify all restored
@@ -442,27 +440,15 @@ useEffect(() => {
 
 ```typescript
 // Example unit test
-import { calculateElapsedFromEvents } from '@/lib/timeUtils';
+import { formatTime } from '@/lib/utils';
 
-describe('calculateElapsedFromEvents', () => {
-  it('calculates elapsed time from completed events', () => {
-    const events: TimeEvent[] = [
-      { startTime: 1000, endTime: 2000 },
-      { startTime: 3000, endTime: 5000 },
-    ];
-    
-    const elapsed = calculateElapsedFromEvents(events);
-    expect(elapsed).toBe(3); // 3 seconds total
+describe('formatTime', () => {
+  it('formats seconds to HH:MM:SS', () => {
+    expect(formatTime(3661)).toBe('01:01:01');
   });
 
-  it('includes running events using current time', () => {
-    const now = Date.now();
-    const events: TimeEvent[] = [
-      { startTime: now - 5000, endTime: null },
-    ];
-    
-    const elapsed = calculateElapsedFromEvents(events);
-    expect(elapsed).toBeGreaterThanOrEqual(5);
+  it('handles zero seconds', () => {
+    expect(formatTime(0)).toBe('00:00:00');
   });
 });
 ```

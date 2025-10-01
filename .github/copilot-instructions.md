@@ -2,44 +2,22 @@
 
 ## Project Overview
 
-Multi-Timer is a Next.js 15 time tracking app for development agencies using **event-based time tracking** (not interval-based). All state lives in localStorage with no backend database - Xano only handles authentication.
+Multi-Timer is a Next.js 15 time tracking app for development agencies. All state lives in localStorage with no backend database - Xano only handles authentication.
+
+**Note:** Timer tracking logic has been cleared and is ready for fresh implementation. See `docs/timer-rebuild-plan.md` for details.
 
 ## Critical Architecture Concepts
-
-### Event-Based Time Tracking (THE Core Pattern)
-
-**Never increment elapsed time directly.** Instead, store immutable `TimeEvent` records:
-
-```typescript
-interface TimeEvent {
-  id: string;
-  startTime: number; // Unix timestamp - set ONCE, never modified
-  endTime: number | null; // null = still running
-  taskName: string; // snapshot at event creation
-  projectName: string;
-}
-```
-
-**Calculate elapsed time** by summing event durations (see `calculateElapsedFromEvents` in `MultiTimer.tsx`):
-
-- Running events: `Math.floor((Date.now() - event.startTime) / 1000)`
-- Completed events: `Math.floor((event.endTime - event.startTime) / 1000)`
-
-**Why?** Browser tab throttling breaks interval-based timers. Events survive throttling because they're timestamp-based calculations.
 
 ### State Management Pattern
 
 `MultiTimer.tsx` is the **single source of truth** for all timer state:
 
-- `groups`: Array of timer groups with calculated elapsed times
-- `timeEvents`: Immutable event history used to calculate elapsed
-- `activeTimerId`: Current running timer (only one can run at a time)
+- `groups`: Array of timer groups containing timers
+- Timer tracking logic: **Currently removed, ready for new implementation**
 
-**Persistence:** Three localStorage keys in `MultiTimer.tsx`:
+**Persistence:** localStorage key in `MultiTimer.tsx`:
 
-- `multi-timer/state`: Timer groups structure
-- `multi-timer/running`: Active timer ID
-- `multi-timer/time-events`: Historical time events
+- `multi-timer/state`: Timer groups structure and view preferences
 
 ### Component Hierarchy & Data Flow
 
@@ -104,11 +82,7 @@ Auth flow: Xano JWT stored in `localStorage` → `AuthContext` provides auth sta
 
 1. Add state to `MultiTimer.tsx` (state owner)
 2. Pass data down to `Timer.tsx` as props
-3. Persist new state fields to localStorage in `handleStatePersist`
-
-### Modifying Time Calculations
-
-**DO NOT** touch `startTime` once set. Modify `calculateElapsedFromEvents` logic instead.
+3. Persist new state fields to localStorage
 
 ### Adding UI Elements
 
@@ -133,18 +107,16 @@ Auth flow: Xano JWT stored in `localStorage` → `AuthContext` provides auth sta
 
 | File                            | Purpose                                      |
 | ------------------------------- | -------------------------------------------- |
-| `src/components/MultiTimer.tsx` | State management, event system, localStorage |
+| `src/components/MultiTimer.tsx` | State management, localStorage               |
 | `src/components/Timer.tsx`      | Timer UI card (presentation)                 |
 | `src/contexts/AuthContext.tsx`  | Authentication state provider                |
 | `src/lib/auth.ts`               | Xano auth utilities                          |
-| `docs/architecture.md`          | Deep dive on event system design             |
+| `docs/timer-rebuild-plan.md`    | Plan for timer logic implementation          |
 | `docs/development.md`           | Full developer setup guide                   |
 
 ## Anti-Patterns to Avoid
 
-❌ **Don't mutate `startTime`** - creates timer drift bugs  
 ❌ **Don't use `setInterval` for elapsed time** - browser throttling breaks it  
-❌ **Don't store elapsed time in localStorage** - calculate from events  
 ❌ **Don't manage state in `Timer.tsx`** - keep it in `MultiTimer.tsx`  
 ❌ **Don't skip type guards** when reading localStorage - data can be corrupt
 
@@ -217,6 +189,7 @@ NEXT_PUBLIC_API_BASE_URL=https://your-workspace.xano.io/api:main
 ## Testing Strategy
 
 **Current approach:** Manual testing only (no test framework configured)
+
 
 ### Manual Testing Checklist
 
