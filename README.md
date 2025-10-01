@@ -1,102 +1,82 @@
 # Multi-Timer
 
-## Context
+A time tracking application for development agencies to accurately track billable hours across multiple projects and tasks.
 
-The six developers at Dappit software development agency bill client work based on hourly rates. This requires tracking time across multiple projects and tasks throughout the day. Having a simple and elegant multi-timer web app with multiple stopwatches for different tasks will be hugely beneficial.
+## 📖 Documentation
 
-## MVP Requirements
+**👉 [Full Documentation](./docs/README.md)**
 
-1. Stopwatches work seamlessly: starting or resuming a certain watch pauses all other ones.
-2. A central number shows how much time I’ve done for the day, which is the sum of the active watches.
-3. The app keeps a history of timestamps when watches were started and stopped, so I can have a breakdown of what I did and when.
-4. If I lose internet connection or close the browser, it keeps the progress. If I lose the watches, I lose my billing time for the day. This is another reason why point 3 is important (to store a cache of times stopped and started).
+- **[Quick Start Guide](./docs/quick-start.md)** - Get up and running in minutes
+- **[Architecture](./docs/architecture.md)** - Technical implementation details
+- **[Features](./docs/features.md)** - Current capabilities and roadmap
+- **[Changelog](./docs/changelog.md)** - Version history and updates
+- **[Integration Guide](./docs/integrations.md)** - Third-party integrations
 
-## Future Features
+## 🚀 Quick Start
 
-1. Integrate with ClickUp, Linear, or any other project management software to pull tasks in for the day that can give names to the watches.
-2. Potentially sync with Zoho Books to make logging the hours easier at the end of the day.
-
-## Work Completed So Far
-
-- [x] Next.js project initialization
-- [x] Connection with GitHub & Vercel
-- [x] Consolidated styling with Dappit brand guidelines
-  - [x] Implemented Poppins font (primary Dappit typeface)
-  - [x] Applied Dappit palette (#202020, #F3F3F3, #01D9B5, #FF7F50)
-  - [x] Moved Dappit logos to public folder and created a minimal homepage
-  - [x] Configured Tailwind utilities for brand colors
-- [x] **Timer Experience**
-  - [x] Created Timer component with exclusive start/stop behaviour
-  - [x] Added compact and standard layouts with visual active states
-  - [x] Exposed task and notes fields per timer, with notes-only compact view
-  - [x] Enabled timer cards to run/stop on click in compact mode
-- [x] **Timer Management**
-  - [x] Restructured state into project-based timer groups
-  - [x] Added group-level add/remove actions and per-group timers
-  - [x] Enabled responsive grid layouts supporting dense timer rows
-  - [x] Added compact mode toggle with streamlined daily total display
-- [x] **Timer Persistence**
-  - [x] Store timer groups, tasks, notes, and layout preference in `localStorage`
-  - [x] Resume in-progress timers across refreshes with `sessionStorage`
-  - [x] Guard against corrupt storage payloads with runtime normalisation
-- [x] **Shared Layout & Navigation**
-  - [x] Root layout wraps pages with branded shell and Navbar
-  - [x] Navbar renders logo with home navigation and dark/light support
-- [x] **🆕 User Authentication System**
-  - [x] Login and signup functionality
-  - [x] JWT token-based authentication
-  - [x] Protected routes and session management
-  - [x] Integration with Xano backend
-  - [x] User profile display in navbar
-  - [x] Secure logout functionality
-
-## Architecture & Components
-
-### Component Structure
-```
-src/
-├── app/
-│   ├── page.tsx          # Home route with protected authentication
-│   ├── layout.tsx        # Root layout with AuthProvider and shared shell
-│   └── globals.css       # Global styles and Tailwind imports
-├── components/
-│   ├── Navbar.tsx        # Branded navigation with user info and logout
-│   ├── Timer.tsx         # Individual timer component
-│   ├── MultiTimer.tsx    # Timer management and daily total
-│   ├── AuthForm.tsx      # Login/signup form component
-│   └── ProtectedRoute.tsx # Route protection wrapper
-├── contexts/
-│   └── AuthContext.tsx   # Authentication state management
-├── lib/
-│   └── auth.ts           # Authentication utilities and API calls
-└── .env.local            # Environment variables (not committed)
+```bash
+npm install
+npm run dev
 ```
 
-### AuthContext.tsx & auth.ts
-**Purpose**: Centralized authentication state management and API integration.
-**Key Features**:
-- JWT token storage and management
-- User session persistence across page refreshes
-- Login, signup, and logout functionality
-- Protected API request utilities
-- Token verification and auto-refresh
+Visit `http://localhost:3000` to start tracking time.
 
-### AuthForm.tsx
-**Purpose**: Unified login and signup form with validation.
-**Key Features**:
-- Toggle between login and signup modes
-- Form validation (email format, password length)
-- Error display and handling
-- Loading states during submission
-- Responsive design matching app theme
+## ✨ Key Features
 
-### ProtectedRoute.tsx
-**Purpose**: Wrapper component to protect routes requiring authentication.
-**Key Features**:
-- Checks authentication status
-- Shows loading state during verification
-- Renders fallback (login form) for unauthenticated users
-- Allows authenticated users to access protected content
+- ⏱️ **Event-Based Time Tracking** - Accurate to the second, immune to browser throttling
+- 📁 **Project Organization** - Group timers by project or client
+- 💾 **Persistent State** - Never lose your time data
+- 🔐 **User Authentication** - Secure user accounts
+- 📊 **Complete History** - Audit trail for billing accuracy
+
+## 🎯 MVP Requirements
+
+## 🎯 MVP Requirements
+
+- [x] **Exclusive Timer Behavior** - Starting one timer automatically stops others
+- [x] **Daily Total** - Central display showing total time tracked
+- [x] **Timestamp History** - Complete record of start/stop events for billing
+- [x] **Persistent State** - Data survives browser refresh, closure, and network issues
+
+## 🏗️ Built With
+
+- **Next.js 14** - React framework with App Router
+- **TypeScript** - Type-safe development
+- **Tailwind CSS** - Utility-first styling
+- **Xano** - Backend authentication
+- **Vercel** - Deployment platform
+
+## 📱 Current Status
+
+**Version**: 2.0.0 (Event-Based Time Tracking)  
+**Last Updated**: October 1, 2025
+
+### ✅ Completed
+- Event-based time tracking system (v2.0)
+- User authentication and protected routes
+- Multiple timer groups and timers
+- LocalStorage persistence
+- Compact and standard layouts
+- Timer accuracy fix (immune to browser throttling)
+
+### 🚧 In Progress
+- Analytics dashboard
+- Time export functionality
+
+### 📋 Planned
+- Zoho Books integration for billing
+- ClickUp/Linear task integration
+- Team collaboration features
+
+See [Changelog](./docs/changelog.md) for detailed version history.
+
+## 🤝 Contributing
+
+This is a proprietary project for Dappit Software. For questions or contributions, contact the development team.
+
+---
+
+**Made with ⏱️ by Dappit Software**
 
 ### Timer.tsx
 **Purpose**: Individual stopwatch card that adapts between full and compact views.
