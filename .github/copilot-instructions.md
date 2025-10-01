@@ -105,14 +105,14 @@ Auth flow: Xano JWT stored in `localStorage` → `AuthContext` provides auth sta
 
 ## Key Files Reference
 
-| File                            | Purpose                                      |
-| ------------------------------- | -------------------------------------------- |
-| `src/components/MultiTimer.tsx` | State management, localStorage               |
-| `src/components/Timer.tsx`      | Timer UI card (presentation)                 |
-| `src/contexts/AuthContext.tsx`  | Authentication state provider                |
-| `src/lib/auth.ts`               | Xano auth utilities                          |
-| `docs/timer-rebuild-plan.md`    | Plan for timer logic implementation          |
-| `docs/development.md`           | Full developer setup guide                   |
+| File                            | Purpose                             |
+| ------------------------------- | ----------------------------------- |
+| `src/components/MultiTimer.tsx` | State management, localStorage      |
+| `src/components/Timer.tsx`      | Timer UI card (presentation)        |
+| `src/contexts/AuthContext.tsx`  | Authentication state provider       |
+| `src/lib/auth.ts`               | Xano auth utilities                 |
+| `docs/timer-rebuild-plan.md`    | Plan for timer logic implementation |
+| `docs/development.md`           | Full developer setup guide          |
 
 ## Anti-Patterns to Avoid
 
@@ -189,7 +189,6 @@ NEXT_PUBLIC_API_BASE_URL=https://your-workspace.xano.io/api:main
 ## Testing Strategy
 
 **Current approach:** Manual testing only (no test framework configured)
-
 
 ### Manual Testing Checklist
 

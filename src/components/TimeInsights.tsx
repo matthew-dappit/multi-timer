@@ -11,6 +11,7 @@ interface TimeEvent {
   endTime: number | null; // null if currently running
   taskName: string;
   projectName: string;
+  notes: string;
 }
 
 interface HourlyData {
