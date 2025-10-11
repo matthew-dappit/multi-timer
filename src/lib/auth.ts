@@ -183,7 +183,7 @@ export const authAPI = {
       const user = await this.getCurrentUser();
       authClient.setUser(user);
       return user;
-    } catch (error) {
+    } catch {
       authClient.removeToken();
       return null;
     }

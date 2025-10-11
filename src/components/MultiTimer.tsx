@@ -337,13 +337,14 @@ const normaliseTimer = (candidate: unknown): TimerData => {
     return createTimer();
   }
 
-  const value = candidate as Partial<TimerData>;
+  const value = candidate as Partial<TimerData> & Record<string, unknown>;
 
+  const rawTaskId = value.taskId as unknown;
   let taskId: string | null = null;
-  if (typeof value.taskId === "string" && value.taskId.trim()) {
-    taskId = value.taskId;
-  } else if (typeof value.taskId === "number") {
-    taskId = value.taskId.toString();
+  if (typeof rawTaskId === "string" && rawTaskId.trim()) {
+    taskId = rawTaskId;
+  } else if (typeof rawTaskId === "number") {
+    taskId = rawTaskId.toString();
   }
 
   return {
@@ -360,17 +361,18 @@ const normaliseGroup = (candidate: unknown, index: number): TimerGroup => {
     return createGroup(index + 1);
   }
 
-  const value = candidate as Partial<TimerGroup>;
+  const value = candidate as Partial<TimerGroup> & Record<string, unknown>;
   const timersSource = Array.isArray(value.timers) ? value.timers : [];
   const timers = timersSource
     .map((timer) => normaliseTimer(timer))
     .filter(Boolean);
 
+  const rawProjectId = value.projectId as unknown;
   let projectId: string | null = null;
-  if (typeof value.projectId === "string" && value.projectId.trim()) {
-    projectId = value.projectId;
-  } else if (typeof value.projectId === "number") {
-    projectId = value.projectId.toString();
+  if (typeof rawProjectId === "string" && rawProjectId.trim()) {
+    projectId = rawProjectId;
+  } else if (typeof rawProjectId === "number") {
+    projectId = rawProjectId.toString();
   }
 
   return {

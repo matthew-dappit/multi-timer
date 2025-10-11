@@ -1,7 +1,5 @@
 "use client";
 
-import {useState} from "react";
-
 interface TimeEvent {
   id: string;
   groupId: string;
@@ -282,4 +280,3 @@ export default function TimeHistoryModal({
     </div>
   );
 }
-
