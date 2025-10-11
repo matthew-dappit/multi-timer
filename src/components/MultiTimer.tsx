@@ -1,10 +1,280 @@
 "use client";
 
-import {useEffect, useRef, useState} from "react";
+import {useEffect, useMemo, useRef, useState} from "react";
+import {authClient} from "@/lib/auth";
 import Timer from "./Timer";
 import TimeEntryModal from "./TimeEntryModal";
 import TimeHistoryModal from "./TimeHistoryModal";
 import EditTimeSlotModal from "./EditTimeSlotModal";
+
+const WEBAPP_API_BASE_URL =
+  process.env.NEXT_PUBLIC_WEBAPP_API_BASE_URL ?? "https://api.dappit.org/api:THWVRjoL";
+
+interface ZohoProject {
+  id: string;
+  name: string;
+}
+
+interface ZohoTask {
+  id: string;
+  projectId: string;
+  name: string;
+}
+
+interface ProjectPickerProps {
+  selectedProject: ZohoProject | undefined;
+  fallbackProjectName: string | null;
+  availableProjects: ZohoProject[];
+  totalProjectCount: number;
+  searchTerm: string;
+  onSearchChange: (value: string) => void;
+  onSelect: (projectId: string | null) => void;
+  isLoading: boolean;
+  disabled: boolean;
+}
+
+const ProjectPicker = ({
+  selectedProject,
+  fallbackProjectName,
+  availableProjects,
+  totalProjectCount,
+  searchTerm,
+  onSearchChange,
+  onSelect,
+  isLoading,
+  disabled,
+}: ProjectPickerProps) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  const normalisedSearch = searchTerm.trim().toLowerCase();
+  const optionList = useMemo(() => {
+    const map = new Map<string, ZohoProject>();
+    if (selectedProject) {
+      map.set(selectedProject.id, selectedProject);
+    }
+    for (const project of availableProjects) {
+      map.set(project.id, project);
+    }
+    return Array.from(map.values());
+  }, [availableProjects, selectedProject]);
+
+  const filteredOptions = useMemo(() => {
+    if (!normalisedSearch) {
+      return optionList;
+    }
+    return optionList.filter((project) =>
+      project.name.toLowerCase().includes(normalisedSearch)
+    );
+  }, [normalisedSearch, optionList]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(event.target as Node)
+      ) {
+        setIsOpen(false);
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    window.addEventListener("keydown", handleEscape);
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const id = requestAnimationFrame(() => {
+      inputRef.current?.focus();
+    });
+    return () => cancelAnimationFrame(id);
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (disabled && isOpen) {
+      setIsOpen(false);
+    }
+  }, [disabled, isOpen]);
+
+  const buttonLabel = (() => {
+    if (selectedProject) {
+      return selectedProject.name;
+    }
+    if (fallbackProjectName) {
+      return `Previous: ${fallbackProjectName}`;
+    }
+    if (isLoading) {
+      return "Loading projects...";
+    }
+    if (totalProjectCount === 0) {
+      return "No projects available";
+    }
+    return "Select project";
+  })();
+
+  const emptyStateMessage = (() => {
+    if (isLoading) {
+      return "Loading projects...";
+    }
+    if (totalProjectCount === 0) {
+      return "No projects available";
+    }
+    if (optionList.length === 0) {
+      return "All projects are already assigned";
+    }
+    if (normalisedSearch) {
+      return "No matching projects";
+    }
+    return "No projects available";
+  })();
+
+  const handleToggle = () => {
+    if (disabled) {
+      return;
+    }
+    setIsOpen((previous) => !previous);
+  };
+
+  const handleSelect = (projectId: string | null) => {
+    onSelect(projectId);
+    setIsOpen(false);
+  };
+
+  const showClearSelection = !!selectedProject || !!fallbackProjectName;
+
+  return (
+    <div className="relative" ref={containerRef}>
+      <button
+        type="button"
+        onClick={handleToggle}
+        disabled={disabled}
+        className="flex w-full items-center justify-between rounded-lg border border-gray-200 bg-transparent px-3 py-2 text-left text-sm font-medium text-gray-900 outline-none transition hover:border-teal-400 focus:border-teal-400 focus:ring-1 focus:ring-teal-300 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-100 dark:hover:border-teal-400"
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
+      >
+        <span className="truncate">{buttonLabel}</span>
+        <svg
+          className={`ml-2 h-4 w-4 text-gray-400 transition-transform ${
+            isOpen ? "rotate-180" : ""
+          }`}
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth={2}
+          aria-hidden="true"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {isOpen && (
+        <div className="absolute z-20 mt-2 w-full rounded-xl border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-900">
+          <div className="border-b border-gray-200 p-2 dark:border-gray-800">
+            <div className="relative">
+              <input
+                ref={inputRef}
+                type="text"
+                value={searchTerm}
+                onChange={(event) => onSearchChange(event.target.value)}
+                placeholder="Search projects..."
+                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 pl-9 text-sm text-gray-700 outline-none focus:border-teal-400 focus:ring-1 focus:ring-teal-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+              />
+              <svg
+                className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 dark:text-gray-500"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+                aria-hidden="true"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M21 21l-4.35-4.35M17 10.5a6.5 6.5 0 11-13 0 6.5 6.5 0 0113 0z"
+                />
+              </svg>
+            </div>
+          </div>
+
+          {fallbackProjectName && !selectedProject && (
+            <div className="border-b border-gray-200 px-3 py-2 text-xs text-gray-500 dark:border-gray-800 dark:text-gray-400">
+              Previously selected: {fallbackProjectName}
+            </div>
+          )}
+
+          {showClearSelection && (
+            <button
+              type="button"
+              className="w-full px-3 py-2 text-left text-sm text-teal-600 transition hover:bg-teal-50 dark:text-teal-300 dark:hover:bg-teal-500/10"
+              onClick={() => handleSelect(null)}
+            >
+              Clear selection
+            </button>
+          )}
+
+          <div className="max-h-56 overflow-y-auto py-1">
+            {filteredOptions.length === 0 ? (
+              <div className="px-3 py-4 text-sm text-gray-500 dark:text-gray-400">
+                {emptyStateMessage}
+              </div>
+            ) : (
+              filteredOptions.map((project) => {
+                const isSelected = selectedProject?.id === project.id;
+                return (
+                  <button
+                    key={project.id}
+                    type="button"
+                    onClick={() => handleSelect(project.id)}
+                    className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm transition ${
+                      isSelected
+                        ? "bg-teal-50 font-semibold text-teal-700 dark:bg-teal-500/10 dark:text-teal-200"
+                        : "text-gray-700 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-800"
+                    }`}
+                    role="option"
+                    aria-selected={isSelected}
+                  >
+                    <span className="truncate">{project.name}</span>
+                    {isSelected && (
+                      <svg
+                        className="h-4 w-4 text-teal-500 dark:text-teal-300"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        strokeWidth={2}
+                        aria-hidden="true"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M5 13l4 4L19 7"
+                        />
+                      </svg>
+                    )}
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 // Time tracking event - immutable record of a timer session
 interface TimeEvent {
@@ -28,6 +298,7 @@ interface RunningSession {
 
 interface TimerData {
   id: string;
+  taskId: string | null;
   taskName: string;
   notes: string;
   elapsed: number; // Total elapsed seconds (calculated from events)
@@ -35,6 +306,7 @@ interface TimerData {
 
 interface TimerGroup {
   id: string;
+  projectId: string | null;
   projectName: string;
   timers: TimerData[];
 }
@@ -43,6 +315,7 @@ const createId = () => Math.random().toString(36).slice(2, 12);
 
 const createTimer = (): TimerData => ({
   id: createId(),
+  taskId: null,
   taskName: "",
   notes: "",
   elapsed: 0,
@@ -50,6 +323,7 @@ const createTimer = (): TimerData => ({
 
 const createGroup = (index: number): TimerGroup => ({
   id: createId(),
+  projectId: null,
   projectName: `Project ${index}`,
   timers: [createTimer()],
 });
@@ -65,8 +339,16 @@ const normaliseTimer = (candidate: unknown): TimerData => {
 
   const value = candidate as Partial<TimerData>;
 
+  let taskId: string | null = null;
+  if (typeof value.taskId === "string" && value.taskId.trim()) {
+    taskId = value.taskId;
+  } else if (typeof value.taskId === "number") {
+    taskId = value.taskId.toString();
+  }
+
   return {
     id: typeof value.id === "string" && value.id.trim() ? value.id : createId(),
+    taskId,
     taskName: typeof value.taskName === "string" ? value.taskName : "",
     notes: typeof value.notes === "string" ? value.notes : "",
     elapsed: 0, // Will be recalculated from events
@@ -84,14 +366,107 @@ const normaliseGroup = (candidate: unknown, index: number): TimerGroup => {
     .map((timer) => normaliseTimer(timer))
     .filter(Boolean);
 
+  let projectId: string | null = null;
+  if (typeof value.projectId === "string" && value.projectId.trim()) {
+    projectId = value.projectId;
+  } else if (typeof value.projectId === "number") {
+    projectId = value.projectId.toString();
+  }
+
   return {
     id: typeof value.id === "string" && value.id.trim() ? value.id : createId(),
+    projectId,
     projectName:
       typeof value.projectName === "string" && value.projectName.trim()
         ? value.projectName
         : `Project ${index + 1}`,
     timers: timers.length ? timers : [createTimer()],
   };
+};
+
+const normaliseProjects = (payload: unknown): ZohoProject[] => {
+  if (!Array.isArray(payload)) {
+    return [];
+  }
+
+  return payload
+    .map((item) => {
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+
+      const record = item as Record<string, unknown>;
+      const projectIdRaw =
+        record.zoho_project_id ?? record.project_id ?? record.id;
+      const projectNameRaw = record.project_name ?? record.name;
+
+      let projectId: string | null = null;
+      if (typeof projectIdRaw === "string" && projectIdRaw.trim()) {
+        projectId = projectIdRaw;
+      } else if (typeof projectIdRaw === "number") {
+        projectId = projectIdRaw.toString();
+      }
+
+      const projectName =
+        typeof projectNameRaw === "string" && projectNameRaw.trim()
+          ? projectNameRaw.trim()
+          : null;
+
+      if (!projectId || !projectName) {
+        return null;
+      }
+
+      return {id: projectId, name: projectName};
+    })
+    .filter((project): project is ZohoProject => project !== null);
+};
+
+const normaliseTasks = (payload: unknown): ZohoTask[] => {
+  if (!Array.isArray(payload)) {
+    return [];
+  }
+
+  return payload
+    .map((item) => {
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+
+      const record = item as Record<string, unknown>;
+      const taskIdRaw = record.zoho_task_id ?? record.id;
+      const projectIdRaw = record.zoho_project_id;
+      const taskNameRaw = record.task_name ?? record.name;
+
+      let taskId: string | null = null;
+      if (typeof taskIdRaw === "string" && taskIdRaw.trim()) {
+        taskId = taskIdRaw;
+      } else if (typeof taskIdRaw === "number") {
+        taskId = taskIdRaw.toString();
+      }
+
+      let projectId: string | null = null;
+      if (typeof projectIdRaw === "string" && projectIdRaw.trim()) {
+        projectId = projectIdRaw;
+      } else if (typeof projectIdRaw === "number") {
+        projectId = projectIdRaw.toString();
+      }
+
+      const taskName =
+        typeof taskNameRaw === "string" && taskNameRaw.trim()
+          ? taskNameRaw.trim()
+          : null;
+
+      if (!taskId || !projectId || !taskName) {
+        return null;
+      }
+
+      return {
+        id: taskId,
+        projectId,
+        name: taskName,
+      };
+    })
+    .filter((task): task is ZohoTask => task !== null);
 };
 
 export default function MultiTimer() {
@@ -101,7 +476,37 @@ export default function MultiTimer() {
   const [runningSession, setRunningSession] = useState<RunningSession | null>(
     null
   );
+  const [projects, setProjects] = useState<ZohoProject[]>([]);
+  const [tasks, setTasks] = useState<ZohoTask[]>([]);
+  const [isLoadingProjects, setIsLoadingProjects] = useState(false);
+  const [isLoadingTasks, setIsLoadingTasks] = useState(false);
+  const [projectSearchTerms, setProjectSearchTerms] = useState<
+    Record<string, string>
+  >({});
   const hasHydrated = useRef(false);
+
+  const tasksByProject = useMemo(() => {
+    const map = new Map<string, ZohoTask[]>();
+    for (const task of tasks) {
+      const key = task.projectId;
+      if (!map.has(key)) {
+        map.set(key, []);
+      }
+      map.get(key)!.push(task);
+    }
+    return map;
+  }, [tasks]);
+
+  const selectedProjectIds = useMemo(() => {
+    const ids = groups
+      .map((group) =>
+        typeof group.projectId === "string" && group.projectId.trim()
+          ? group.projectId
+          : null
+      )
+      .filter((value): value is string => value !== null);
+    return new Set(ids);
+  }, [groups]);
 
   // Modal state
   const [timeEntryModal, setTimeEntryModal] = useState<{
@@ -239,6 +644,144 @@ export default function MultiTimer() {
     setTimeEvents(nextTimeEvents);
     setRunningSession(nextRunningSession);
   }, []);
+
+  useEffect(() => {
+    let isCancelled = false;
+    const token = authClient.getToken();
+
+    if (!token) {
+      return () => {
+        isCancelled = true;
+      };
+    }
+
+    const loadProjects = async () => {
+      setIsLoadingProjects(true);
+      try {
+        const response = await fetch(`${WEBAPP_API_BASE_URL}/zoho_projects`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (!response.ok) {
+          throw new Error(`Projects request failed (${response.status})`);
+        }
+
+        const payload = await response.json();
+        if (isCancelled) return;
+
+        setProjects(normaliseProjects(payload));
+      } catch (error) {
+        if (!isCancelled) {
+          console.error("Failed to load projects", error);
+          setProjects([]);
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsLoadingProjects(false);
+        }
+      }
+    };
+
+    const loadTasks = async () => {
+      setIsLoadingTasks(true);
+      try {
+        const response = await fetch(`${WEBAPP_API_BASE_URL}/zoho_tasks`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (!response.ok) {
+          throw new Error(`Tasks request failed (${response.status})`);
+        }
+
+        const payload = await response.json();
+        if (isCancelled) return;
+
+        setTasks(normaliseTasks(payload));
+      } catch (error) {
+        if (!isCancelled) {
+          console.error("Failed to load tasks", error);
+          setTasks([]);
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsLoadingTasks(false);
+        }
+      }
+    };
+
+    loadProjects();
+    loadTasks();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!projects.length) return;
+
+    setGroups((previous) => {
+      let hasChanges = false;
+
+      const nextGroups = previous.map((group) => {
+        if (!group.projectId) {
+          return group;
+        }
+
+        const matchedProject = projects.find(
+          (project) => project.id === group.projectId
+        );
+
+        if (!matchedProject || group.projectName === matchedProject.name) {
+          return group;
+        }
+
+        hasChanges = true;
+        return {...group, projectName: matchedProject.name};
+      });
+
+      return hasChanges ? nextGroups : previous;
+    });
+  }, [projects]);
+
+  useEffect(() => {
+    if (!tasks.length) return;
+
+    setGroups((previous) => {
+      let hasChanges = false;
+
+      const nextGroups = previous.map((group) => {
+        let groupChanged = false;
+
+        const nextTimers = group.timers.map((timer) => {
+          if (!timer.taskId) {
+            return timer;
+          }
+
+          const matchedTask = tasks.find((task) => task.id === timer.taskId);
+          if (!matchedTask || timer.taskName === matchedTask.name) {
+            return timer;
+          }
+
+          groupChanged = true;
+          hasChanges = true;
+          return {...timer, taskName: matchedTask.name};
+        });
+
+        if (!groupChanged) {
+          return group;
+        }
+
+        return {...group, timers: nextTimers};
+      });
+
+      return hasChanges ? nextGroups : previous;
+    });
+  }, [tasks]);
 
   // Persist groups and compact mode to localStorage
   useEffect(() => {
@@ -515,18 +1058,25 @@ export default function MultiTimer() {
     );
   };
 
-  const handleTaskChange = (groupId: string, timerId: string, task: string) => {
+  const handleTaskChange = (
+    groupId: string,
+    timerId: string,
+    taskId: string | null,
+    taskName: string
+  ) => {
     updateGroups((previous) =>
-      previous.map((group) =>
-        group.id === groupId
-          ? {
-              ...group,
-              timers: group.timers.map((timer) =>
-                timer.id === timerId ? {...timer, taskName: task} : timer
-              ),
-            }
-          : group
-      )
+      previous.map((group) => {
+        if (group.id !== groupId) {
+          return group;
+        }
+
+        return {
+          ...group,
+          timers: group.timers.map((timer) =>
+            timer.id === timerId ? {...timer, taskId, taskName} : timer
+          ),
+        };
+      })
     );
   };
 
@@ -564,6 +1114,14 @@ export default function MultiTimer() {
     }
 
     setGroups((previous) => previous.filter((group) => group.id !== groupId));
+    setProjectSearchTerms((previous) => {
+      if (!(groupId in previous)) {
+        return previous;
+      }
+      const next = {...previous};
+      delete next[groupId];
+      return next;
+    });
   };
 
   const addTimerToGroup = (groupId: string) => {
@@ -597,12 +1155,53 @@ export default function MultiTimer() {
     );
   };
 
-  const handleProjectNameChange = (groupId: string, name: string) => {
+  const handleProjectSelect = (groupId: string, projectId: string | null) => {
+    const selectedProject = projectId
+      ? projects.find((project) => project.id === projectId)
+      : null;
+    const nextProjectName = selectedProject?.name ?? "";
+
     updateGroups((previous) =>
-      previous.map((group) =>
-        group.id === groupId ? {...group, projectName: name} : group
-      )
+      previous.map((group) => {
+        if (group.id !== groupId) {
+          return group;
+        }
+
+        const hasProjectChanged = group.projectId !== projectId;
+        const shouldUpdateName = group.projectName !== nextProjectName;
+
+        if (!hasProjectChanged && !shouldUpdateName) {
+          return group;
+        }
+
+        return {
+          ...group,
+          projectId,
+          projectName: nextProjectName,
+          timers: hasProjectChanged
+            ? group.timers.map((timer) => ({
+                ...timer,
+                taskId: null,
+                taskName: "",
+              }))
+            : group.timers,
+        };
+      })
     );
+
+    setProjectSearchTerms((previous) => {
+      if (previous[groupId] === "") {
+        return previous;
+      }
+      return {...previous, [groupId]: ""};
+    });
+  };
+
+  const handleProjectSearchChange = (groupId: string, value: string) => {
+    setProjectSearchTerms((previous) => ({
+      ...previous,
+      [groupId]: value,
+    }));
   };
 
   const formatTime = (seconds: number): string => {
@@ -689,48 +1288,89 @@ export default function MultiTimer() {
       </div>
 
       <div className={gridClasses}>
-        {groups.map((group, index) => (
-          <div
-            key={group.id}
-            className={`flex flex-col rounded-2xl border border-gray-200 bg-white shadow-sm transition hover:shadow-md dark:border-gray-700 dark:bg-gray-900/50 ${
-              isCompact ? "gap-4 p-4" : "min-h-[320px] gap-5 p-6"
-            }`}
-          >
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="flex-1">
-                <label className="text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">
-                  Project
-                </label>
-                <input
-                  value={group.projectName}
-                  onChange={(event) =>
-                    handleProjectNameChange(group.id, event.target.value)
-                  }
-                  placeholder={`Project ${index + 1}`}
-                  className="mt-1 w-full rounded-lg border border-gray-200 bg-transparent px-3 py-2 text-sm font-medium text-gray-900 outline-none focus:border-teal-400 focus:ring-1 focus:ring-teal-300 dark:border-gray-700 dark:text-gray-100"
-                />
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => addTimerToGroup(group.id)}
-                  className="rounded-md border border-teal-400 px-3 py-2 text-xs font-semibold text-teal-600 transition hover:bg-teal-50 dark:text-teal-300 dark:hover:bg-teal-500/10 cursor-pointer"
-                >
-                  Add Timer
-                </button>
-                {groups.length > 1 && (
-                  <button
-                    onClick={() => removeGroup(group.id)}
-                    className="rounded-md border border-red-200 px-3 py-2 text-xs font-semibold text-red-500 transition hover:bg-red-50 dark:border-red-500/40 dark:text-red-400 dark:hover:bg-red-500/10 cursor-pointer"
-                  >
-                    Remove
-                  </button>
-                )}
-              </div>
-            </div>
+        {groups.map((group) => {
+          const matchedProject =
+            group.projectId !== null
+              ? projects.find((project) => project.id === group.projectId)
+              : undefined;
 
-            <div className="grid gap-4 grid-cols-[repeat(auto-fit,minmax(220px,1fr))]">
-              {group.timers.map((timer) => {
-                return (
+          const searchTerm = projectSearchTerms[group.id] ?? "";
+
+          const availableProjects = projects.filter(
+            (project) =>
+              project.id === group.projectId ||
+              !selectedProjectIds.has(project.id)
+          );
+
+          const projectSelectDisabled =
+            isLoadingProjects && !projects.length && !group.projectId;
+
+          const groupTaskOptions =
+            group.projectId !== null
+              ? tasksByProject.get(group.projectId) ?? []
+              : [];
+
+          const timerTaskOptions = groupTaskOptions.map(({id, name}) => ({
+            id,
+            name,
+          }));
+
+          const isTaskSelectDisabled = !group.projectId;
+
+          return (
+            <div
+              key={group.id}
+              className={`flex flex-col rounded-2xl border border-gray-200 bg-white shadow-sm transition hover:shadow-md dark:border-gray-700 dark:bg-gray-900/50 ${
+                isCompact ? "gap-4 p-4" : "min-h-[320px] gap-5 p-6"
+              }`}
+            >
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="flex-1">
+                  <label className="text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                    Project
+                  </label>
+                  <div className="mt-1">
+                    <ProjectPicker
+                      selectedProject={matchedProject}
+                      fallbackProjectName={
+                        group.projectId && !matchedProject && group.projectName
+                          ? group.projectName
+                          : null
+                      }
+                      availableProjects={availableProjects}
+                      totalProjectCount={projects.length}
+                      searchTerm={searchTerm}
+                      onSearchChange={(value) =>
+                        handleProjectSearchChange(group.id, value)
+                      }
+                      onSelect={(projectId) =>
+                        handleProjectSelect(group.id, projectId)
+                      }
+                      isLoading={isLoadingProjects}
+                      disabled={projectSelectDisabled}
+                    />
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => addTimerToGroup(group.id)}
+                    className="rounded-md border border-teal-400 px-3 py-2 text-xs font-semibold text-teal-600 transition hover:bg-teal-50 dark:text-teal-300 dark:hover:bg-teal-500/10 cursor-pointer"
+                  >
+                    Add Timer
+                  </button>
+                  {groups.length > 1 && (
+                    <button
+                      onClick={() => removeGroup(group.id)}
+                      className="rounded-md border border-red-200 px-3 py-2 text-xs font-semibold text-red-500 transition hover:bg-red-50 dark:border-red-500/40 dark:text-red-400 dark:hover:bg-red-500/10 cursor-pointer"
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="grid gap-4 grid-cols-[repeat(auto-fit,minmax(220px,1fr))]">
+                {group.timers.map((timer) => (
                   <div key={timer.id} className="relative">
                     {group.timers.length > 1 && (
                       <button
@@ -756,13 +1396,17 @@ export default function MultiTimer() {
 
                     <Timer
                       id={timer.id}
+                      taskId={timer.taskId}
                       taskName={timer.taskName}
                       notes={timer.notes}
                       elapsed={timer.elapsed}
                       isCompact={isCompact}
                       isActive={runningSession?.timerId === timer.id}
-                      onTaskChange={(id, value) =>
-                        handleTaskChange(group.id, id, value)
+                      taskOptions={timerTaskOptions}
+                      isTaskSelectDisabled={isTaskSelectDisabled}
+                      isTaskOptionsLoading={isLoadingTasks}
+                      onTaskChange={(timerId, taskId, taskLabel) =>
+                        handleTaskChange(group.id, timerId, taskId, taskLabel)
                       }
                       onNotesChange={(id, value) =>
                         handleNotesChange(group.id, id, value)
@@ -777,11 +1421,11 @@ export default function MultiTimer() {
                       }
                     />
                   </div>
-                );
-              })}
+                ))}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Modals */}

@@ -1,0 +1,108 @@
+// dappit_users #277
+Table "dappit_users" {
+  id int [pk, unique, default: ""]
+  created_at epochms [default: "now"]
+  zoho_user_id text [default: ""]
+  zoho_organization_id text [default: ""]
+  email email [default: ""]
+  password password [default: ""]
+  first_name text [default: ""]
+  last_name text [default: ""]
+  Note: 'Users from the Dappit organization for Dappit internal projects'
+}
+
+// time_intervals #283
+Table "time_intervals" {
+  id int [pk, unique, default: ""]
+  created_at epochms [default: "now"]
+  time_log_id int [default: ""]
+  start_time epochms [default: ""]
+  end_time epochms [default: ""]
+  duration_seconds int [default: ""]
+  Note: 'Stores individual time intervals for a given time log.'
+}
+
+Ref: time_intervals.time_log_id > time_logs.id
+
+// time_logs #282
+Table "time_logs" {
+  id int [pk, unique, default: ""]
+  created_at epochms [default: "now"]
+  dappit_user_id int [default: ""]
+  project_id int [default: ""]
+  task_id int [default: ""]
+  notes text [default: ""]
+  log_date date [default: ""]
+  total_duration_seconds int [default: ""]
+  is_running bool [default: ""]
+  zoho_time_entry_id text [default: ""]
+  sync_status enum [default: ""]
+  Note: 'Stores detailed records of time spent by Dappit users on Zoho projects and tasks.'
+}
+
+Ref: time_logs.dappit_user_id > dappit_users.id
+Ref: time_logs.project_id > zoho_projects.id
+Ref: time_logs.task_id > zoho_tasks.id
+
+// zoho_oauth #278
+Table "zoho_oauth" {
+  id int [pk, unique, default: ""]
+  dappit_user_id int [default: "0"]
+  access_token text [default: ""]
+  refresh_token text [default: ""]
+  token_expires_at epochms [default: ""]
+  created_at epochms [default: "now"]
+  updated_at epochms [default: ""]
+  accounts_server text [default: ""]
+  location text [default: ""]
+  scope text [default: "ZohoBooks.projects.READ ZohoBooks.projects.CREATE ZohoBooks.projects.UPDATE"]
+  Note: 'Stores OAuth tokens for Zoho integration'
+}
+
+Ref: zoho_oauth.dappit_user_id > dappit_users.id
+
+// zoho_projects #279
+Table "zoho_projects" {
+  id int [pk, unique, default: ""]
+  created_at epochms [default: "now"]
+  zoho_project_id text [default: ""]
+  project_name text [default: ""]
+  customer_name text [default: ""]
+  status enum [default: ""]
+  is_archived bool [default: ""]
+  last_synced_at epochms [default: ""]
+  Note: 'Stores the primary projects fetched from Zoho'
+}
+
+// zoho_tasks #280
+Table "zoho_tasks" {
+  id int [pk, unique, default: ""]
+  created_at epochms [default: "now"]
+  zoho_project_id text [default: ""]
+  zoho_task_id text [default: ""]
+  task_name text [default: ""]
+  updated_at epochms [default: ""]
+  status enum [default: ""]
+  is_archived bool [default: ""]
+  Note: 'Stores individual task data fetched from Zoho Projects'
+}
+
+// zoho_user_projects #281
+Table "zoho_user_projects" {
+  id int [pk, unique, default: ""]
+  created_at epochms [default: "now"]
+  zoho_user_id text [default: ""]
+  zoho_project_id text [default: ""]
+  Note: 'Table to manage which zoho users have access to which zoho projects.'
+}
+
+TableGroup "multi-timer" [color: #2ECC71] {
+  dappit_users
+  time_intervals
+  time_logs
+  zoho_oauth
+  zoho_projects
+  zoho_tasks
+  zoho_user_projects
+}
+

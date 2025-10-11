@@ -2,14 +2,23 @@
 
 import {useState} from "react";
 
+interface TimerTaskOption {
+  id: string;
+  name: string;
+}
+
 interface TimerProps {
   id: string;
+  taskId: string | null;
   taskName: string;
   notes: string;
   elapsed: number;
   isCompact: boolean;
   isActive?: boolean;
-  onTaskChange: (id: string, task: string) => void;
+  taskOptions: TimerTaskOption[];
+  isTaskSelectDisabled?: boolean;
+  isTaskOptionsLoading?: boolean;
+  onTaskChange: (id: string, taskId: string | null, taskName: string) => void;
   onNotesChange: (id: string, notes: string) => void;
   onStart?: () => void;
   onStop?: () => void;
@@ -19,11 +28,15 @@ interface TimerProps {
 
 export default function Timer({
   id,
+  taskId,
   taskName,
   notes,
   elapsed,
   isCompact,
   isActive = false,
+  taskOptions,
+  isTaskSelectDisabled = false,
+  isTaskOptionsLoading = false,
   onTaskChange,
   onNotesChange,
   onStart,
@@ -46,6 +59,27 @@ export default function Timer({
   const formattedTime = formatTime(elapsed);
   const hasNotes = notes.trim() !== "";
   const notesLabel = hasNotes ? notes : "Add note";
+
+  const hasMatchingTask =
+    taskId !== null && taskOptions.some((option) => option.id === taskId);
+  const taskSelectValue = hasMatchingTask ? taskId! : "";
+  const taskPlaceholder = (() => {
+    if (isTaskSelectDisabled) {
+      return "Select a project first";
+    }
+    if (isTaskOptionsLoading && !taskOptions.length) {
+      return "Loading tasks...";
+    }
+    if (!hasMatchingTask && taskName) {
+      return `Previous: ${taskName}`;
+    }
+    if (!taskOptions.length) {
+      return "No tasks available";
+    }
+    return "Select task";
+  })();
+  const disableTaskSelect =
+    isTaskSelectDisabled || (isTaskOptionsLoading && !taskOptions.length);
 
   const handleToggle = () => {
     if (isActive && onStop) {
@@ -246,12 +280,28 @@ export default function Timer({
         </span>
       </div>
 
-      <input
-        value={taskName}
-        onChange={(event) => onTaskChange(id, event.target.value)}
-        placeholder="Task name"
+      <select
+        value={taskSelectValue}
+        onChange={(event) => {
+          const nextTaskId = event.target.value
+            ? event.target.value
+            : null;
+          const nextTask =
+            nextTaskId !== null
+              ? taskOptions.find((option) => option.id === nextTaskId)
+              : null;
+          onTaskChange(id, nextTaskId, nextTask ? nextTask.name : "");
+        }}
         className="w-full rounded-md border border-gray-200 bg-transparent px-3 py-2 text-sm font-medium text-gray-900 outline-none transition focus:border-teal-400 focus:ring-1 focus:ring-teal-400 dark:border-gray-700 dark:text-gray-100"
-      />
+        disabled={disableTaskSelect}
+      >
+        <option value="">{taskPlaceholder}</option>
+        {taskOptions.map((option) => (
+          <option key={option.id} value={option.id}>
+            {option.name}
+          </option>
+        ))}
+      </select>
 
       <div className="text-center">
         <div className="font-mono text-3xl font-light text-gray-900 dark:text-gray-100">
