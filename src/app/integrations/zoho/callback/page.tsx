@@ -1,10 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { zohoOAuthAPI, ZohoOAuthError } from "@/lib/zoho-oauth";
 
 export default function ZohoCallbackPage() {
+  return (
+    <Suspense fallback={<ZohoCallbackProcessing message="Processing OAuth callback..." />}>
+      <ZohoCallbackContent />
+    </Suspense>
+  );
+}
+
+function ZohoCallbackContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [status, setStatus] = useState<"processing" | "success" | "error">(
@@ -15,18 +23,15 @@ export default function ZohoCallbackPage() {
   useEffect(() => {
     const handleCallback = async () => {
       try {
-        // Extract parameters from URL
         const code = searchParams.get("code");
         const state = searchParams.get("state");
         const location = searchParams.get("location");
         const accountsServer = searchParams.get("accounts-server");
 
-        // Validate required parameters
         if (!code || !state) {
           throw new Error("Missing required OAuth parameters (code or state)");
         }
 
-        // Call the callback API
         const response = await zohoOAuthAPI.callback({
           code,
           state,
@@ -34,11 +39,9 @@ export default function ZohoCallbackPage() {
           accounts_server: accountsServer || undefined,
         });
 
-        // Success!
         setStatus("success");
         setMessage(response.message || "Zoho connected successfully!");
 
-        // Redirect to home page after 2 seconds
         setTimeout(() => {
           router.push("/");
         }, 2000);
@@ -59,6 +62,26 @@ export default function ZohoCallbackPage() {
     handleCallback();
   }, [searchParams, router]);
 
+  return (
+    <ZohoCallbackStatus status={status} message={message} onReturnHome={() => router.push("/")} />
+  );
+}
+
+function ZohoCallbackProcessing({ message }: { message: string }) {
+  return (
+    <ZohoCallbackStatus status="processing" message={message} onReturnHome={null} />
+  );
+}
+
+function ZohoCallbackStatus({
+  status,
+  message,
+  onReturnHome,
+}: {
+  status: "processing" | "success" | "error";
+  message: string;
+  onReturnHome: (() => void) | null;
+}) {
   return (
     <div className="flex items-center justify-center min-h-[80vh]">
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8 max-w-md w-full">
@@ -121,12 +144,14 @@ export default function ZohoCallbackPage() {
                 Connection Failed
               </h2>
               <p className="text-gray-600 dark:text-gray-400 mb-6">{message}</p>
-              <button
-                onClick={() => router.push("/")}
-                className="px-6 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg transition-colors duration-200"
-              >
-                Return to Home
-              </button>
+              {onReturnHome && (
+                <button
+                  onClick={onReturnHome}
+                  className="px-6 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg transition-colors duration-200"
+                >
+                  Return to Home
+                </button>
+              )}
             </>
           )}
         </div>
@@ -134,4 +159,3 @@ export default function ZohoCallbackPage() {
     </div>
   );
 }
-
