@@ -5,11 +5,13 @@ import {useState, useEffect} from "react";
 interface TimeEntryModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onAddTime: (startTime: number, endTime: number) => void;
+  onAddTime: (startTime: number, endTime: number, selectedDate: string) => void;
   projectName: string;
   taskName: string;
   notes: string;
   isTimerActive: boolean;
+  isSubmitting?: boolean;
+  apiError?: string | null;
 }
 
 export default function TimeEntryModal({
@@ -20,6 +22,8 @@ export default function TimeEntryModal({
   taskName,
   notes,
   isTimerActive,
+  isSubmitting = false,
+  apiError = null,
 }: TimeEntryModalProps) {
   const [selectedDate, setSelectedDate] = useState<string>("");
   const [startHour, setStartHour] = useState<string>("");
@@ -123,7 +127,7 @@ export default function TimeEntryModal({
     }
 
     // Success - add the time
-    onAddTime(startTime, endTime);
+    onAddTime(startTime, endTime, selectedDate);
     onClose();
   };
 
@@ -295,6 +299,15 @@ export default function TimeEntryModal({
           </div>
         )}
 
+        {/* API Error Message */}
+        {apiError && (
+          <div className="mb-4 rounded-lg bg-red-50 p-3 dark:bg-red-900/20">
+            <div className="text-sm font-medium text-red-900 dark:text-red-300">
+              {apiError}
+            </div>
+          </div>
+        )}
+
         {/* Actions */}
         <div className="flex gap-3">
           <button
@@ -305,10 +318,11 @@ export default function TimeEntryModal({
           </button>
           <button
             onClick={validateAndSubmit}
-            className="flex-1 rounded-lg px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90"
+            disabled={isSubmitting}
+            className="flex-1 rounded-lg px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
             style={{backgroundColor: "#01D9B5"}}
           >
-            Add Time
+            {isSubmitting ? "Saving..." : "Add Time"}
           </button>
         </div>
       </div>

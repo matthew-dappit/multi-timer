@@ -2,6 +2,13 @@
 
 import {useEffect, useMemo, useRef, useState} from "react";
 import {authClient} from "@/lib/auth";
+import {
+  createZohoTimer,
+  createZohoTimerInterval,
+  XanoTimerError,
+  type CreateTimerPayload,
+  type CreateIntervalPayload,
+} from "@/lib/xano-timers";
 import Timer from "./Timer";
 import TimeEntryModal from "./TimeEntryModal";
 import TimeHistoryModal from "./TimeHistoryModal";
@@ -286,6 +293,8 @@ interface TimeEvent {
   notes: string;
   startTime: number; // Unix timestamp in ms
   endTime: number | null; // null if currently running
+  backendIntervalId: number | null; // Xano zoho_timer_intervals.id
+  activeDate: string; // YYYY-MM-DD format
 }
 
 // Running session - tracks currently active timer
@@ -302,6 +311,8 @@ interface TimerData {
   taskName: string;
   notes: string;
   elapsed: number; // Total elapsed seconds (calculated from events)
+  backendTimerId: number | null; // Xano zoho_timers.id
+  lastActiveDate: string | null; // YYYY-MM-DD format
 }
 
 interface TimerGroup {
@@ -319,6 +330,8 @@ const createTimer = (): TimerData => ({
   taskName: "",
   notes: "",
   elapsed: 0,
+  backendTimerId: null,
+  lastActiveDate: null,
 });
 
 const createGroup = (index: number): TimerGroup => ({
@@ -347,12 +360,26 @@ const normaliseTimer = (candidate: unknown): TimerData => {
     taskId = rawTaskId.toString();
   }
 
+  const rawBackendTimerId = value.backendTimerId as unknown;
+  let backendTimerId: number | null = null;
+  if (typeof rawBackendTimerId === "number") {
+    backendTimerId = rawBackendTimerId;
+  }
+
+  const rawLastActiveDate = value.lastActiveDate as unknown;
+  let lastActiveDate: string | null = null;
+  if (typeof rawLastActiveDate === "string" && rawLastActiveDate.trim()) {
+    lastActiveDate = rawLastActiveDate;
+  }
+
   return {
     id: typeof value.id === "string" && value.id.trim() ? value.id : createId(),
     taskId,
     taskName: typeof value.taskName === "string" ? value.taskName : "",
     notes: typeof value.notes === "string" ? value.notes : "",
     elapsed: 0, // Will be recalculated from events
+    backendTimerId,
+    lastActiveDate,
   };
 };
 
@@ -485,6 +512,8 @@ export default function MultiTimer() {
   const [projectSearchTerms, setProjectSearchTerms] = useState<
     Record<string, string>
   >({});
+  const [isSubmittingTime, setIsSubmittingTime] = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
   const hasHydrated = useRef(false);
 
   const tasksByProject = useMemo(() => {
@@ -862,6 +891,10 @@ export default function MultiTimer() {
     if (!group || !timer) return;
 
     // Create new time event
+    const now = Date.now();
+    const today = new Date(now);
+    const activeDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+
     const newEvent: TimeEvent = {
       id: createId(),
       groupId,
@@ -869,8 +902,10 @@ export default function MultiTimer() {
       projectName: group.projectName,
       taskName: timer.taskName,
       notes: timer.notes,
-      startTime: Date.now(),
+      startTime: now,
       endTime: null,
+      backendIntervalId: null, // Will be set when synced to backend
+      activeDate,
     };
 
     // Create running session
@@ -929,18 +964,107 @@ export default function MultiTimer() {
     setTimeEntryModal({isOpen: true, groupId, timerId});
   };
 
-  const handleAddManualTime = (
+  const handleAddManualTime = async (
     groupId: string,
     timerId: string,
     startTime: number,
-    endTime: number
+    endTime: number,
+    selectedDate: string
   ) => {
     // Find the timer and group
     const group = groups.find((g) => g.id === groupId);
     const timer = group?.timers.find((t) => t.id === timerId);
     if (!group || !timer) return;
 
-    // Create new time event
+    // Get user info for API calls
+    const user = authClient.getUser();
+    const authToken = authClient.getToken();
+
+    if (!user || !authToken) {
+      console.error("User not authenticated");
+      setApiError("Please log in to save time entries");
+      return;
+    }
+
+    setIsSubmittingTime(true);
+    setApiError(null);
+
+    let backendTimerId = timer.backendTimerId;
+
+    // STEP 1: Check if we need to create/recreate backend timer
+    // Create new backend timer if:
+    // a) No backend timer exists yet (backendTimerId is null)
+    // b) Active date is different from last active date
+    if (!backendTimerId || timer.lastActiveDate !== selectedDate) {
+      try {
+        const timerPayload: CreateTimerPayload = {
+          zoho_project_id: group.projectId || "",
+          zoho_task_id: timer.taskId || "",
+          notes: timer.notes,
+          active_date: selectedDate,
+        };
+
+        const createdTimer = await createZohoTimer(timerPayload, authToken);
+        backendTimerId = createdTimer.id;
+
+        // Update timer with backend ID and date
+        setGroups((prevGroups) =>
+          prevGroups.map((g) =>
+            g.id === groupId
+              ? {
+                  ...g,
+                  timers: g.timers.map((t) =>
+                    t.id === timerId
+                      ? {
+                          ...t,
+                          backendTimerId,
+                          lastActiveDate: selectedDate,
+                        }
+                      : t
+                  ),
+                }
+              : g
+          )
+        );
+      } catch (error) {
+        console.error("Failed to create backend timer:", error);
+        if (error instanceof XanoTimerError) {
+          setApiError(`Failed to create timer: ${error.message}`);
+        } else {
+          setApiError("Failed to create timer. Please try again.");
+        }
+        setIsSubmittingTime(false);
+        return;
+      }
+    }
+
+    // STEP 2: Create time interval
+    let intervalId: number | null = null;
+    try {
+      const intervalPayload: CreateIntervalPayload = {
+        zoho_timer_id: backendTimerId!,
+        start_time: startTime,
+        end_time: endTime,
+        duration: Math.floor((endTime - startTime) / 1000),
+      };
+
+      const createdInterval = await createZohoTimerInterval(
+        intervalPayload,
+        authToken
+      );
+      intervalId = createdInterval.id;
+    } catch (error) {
+      console.error("Failed to create time interval:", error);
+      if (error instanceof XanoTimerError) {
+        setApiError(`Failed to save time entry: ${error.message}`);
+      } else {
+        setApiError("Failed to save time entry. Please try again.");
+      }
+      setIsSubmittingTime(false);
+      return;
+    }
+
+    // STEP 3: Create frontend TimeEvent with backend ID
     const newEvent: TimeEvent = {
       id: createId(),
       groupId,
@@ -950,13 +1074,14 @@ export default function MultiTimer() {
       notes: timer.notes,
       startTime,
       endTime,
+      backendIntervalId: intervalId,
+      activeDate: selectedDate,
     };
 
-    // Add to time events
+    // Add to time events and recalculate elapsed
     const updatedEvents = [...timeEvents, newEvent];
     setTimeEvents(updatedEvents);
 
-    // Recalculate elapsed time for this timer
     setGroups((prevGroups) =>
       prevGroups.map((g) =>
         g.id === groupId
@@ -978,6 +1103,9 @@ export default function MultiTimer() {
           : g
       )
     );
+
+    // Success! Clear loading state
+    setIsSubmittingTime(false);
   };
 
   const handleOpenTimeHistory = (groupId: string, timerId: string) => {
@@ -1442,13 +1570,17 @@ export default function MultiTimer() {
           return (
             <TimeEntryModal
               isOpen={timeEntryModal.isOpen}
-              onClose={() => setTimeEntryModal(null)}
-              onAddTime={(startTime, endTime) => {
+              onClose={() => {
+                setTimeEntryModal(null);
+                setApiError(null); // Clear error on close
+              }}
+              onAddTime={(startTime, endTime, selectedDate) => {
                 handleAddManualTime(
                   timeEntryModal.groupId,
                   timeEntryModal.timerId,
                   startTime,
-                  endTime
+                  endTime,
+                  selectedDate
                 );
                 setTimeEntryModal(null);
               }}
@@ -1456,6 +1588,8 @@ export default function MultiTimer() {
               taskName={timer.taskName}
               notes={timer.notes}
               isTimerActive={runningSession?.timerId === timer.id}
+              isSubmitting={isSubmittingTime}
+              apiError={apiError}
             />
           );
         })()}
