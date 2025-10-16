@@ -194,3 +194,43 @@ export function formatDateForXano(date: Date): string {
 export function getTodayDateString(): string {
   return formatDateForXano(new Date());
 }
+
+/**
+ * Delete a time interval from Xano backend
+ * Automatically updates the parent timer's duration
+ */
+export async function deleteZohoTimerInterval(
+  intervalId: number,
+  authToken: string
+): Promise<void> {
+  try {
+    const response = await fetch(
+      `${WEBAPP_API_BASE_URL}/zoho_timer_intervals/${intervalId}`,
+      {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+        },
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new XanoTimerError(
+        errorText || `Failed to delete interval (${response.status})`,
+        response.status
+      );
+    }
+
+    // DELETE returns the deleted interval object according to swagger docs
+    // We don't need to return it since we're just confirming deletion
+    await response.json();
+  } catch (error) {
+    if (error instanceof XanoTimerError) {
+      throw error;
+    }
+    throw new XanoTimerError(
+      `Network error deleting interval: ${error instanceof Error ? error.message : "Unknown error"}`
+    );
+  }
+}

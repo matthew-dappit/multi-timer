@@ -194,10 +194,10 @@ interface RunningSession {
 ## Integration Goals
 
 ### Phase 1: Core CRUD Operations
-- [ ] Create time events in Xano when timer starts
+- [x] Create time events in Xano (manual time entry)
 - [ ] Update time events in Xano when timer stops
 - [ ] Read/sync time events from Xano on app load
-- [ ] Delete time events from Xano when user deletes locally
+- [x] Delete time events from Xano when user deletes locally
 
 ### Phase 2: Project/Task Sync
 - [ ] Store projects (timer groups) in Xano
@@ -222,496 +222,89 @@ interface RunningSession {
 
 ## Implementation Log
 
-### Template for Each Function Implementation
+### Implementation Log Template
 
-Use this template for documenting each integration function:
+Use this streamlined template for documenting each integration function:
 
 ---
 
 #### Function: Manual Time Entry Backend Persistence
-**Date:** 2025-10-16
 **Status:** ✅ Complete
-**Estimated Time:** 3 hours
-**Actual Time:** 2.5 hours
 
-**Purpose:**
-Enable users to add past work sessions manually through the UI. When a user adds manual time, the system should:
-1. Create a backend timer record in Xano (zoho_timers table) if one doesn't exist for the selected date
-2. Create a time interval record (zoho_timer_intervals table) representing the manual time entry
-3. Link the interval to the timer and store it in both Xano and local frontend state
-4. Handle date-based timer logic: Same timer card can have multiple backend records (one per active_date)
+**Purpose:** Enable manual time entry with backend persistence to Xano zoho_timers and zoho_timer_intervals tables, handling date-based timer logic where same frontend timer card maps to multiple backend records (one per active_date).
 
-**Current Local Implementation:**
-```typescript
-// Before: Manual time entries were only stored in localStorage
-const handleAddManualTime = (
-  groupId: string,
-  timerId: string,
-  startTime: number,
-  endTime: number
-) => {
-  const group = groups.find((g) => g.id === groupId);
-  const timer = group?.timers.find((t) => t.id === timerId);
-  if (!group || !timer) return;
+**API Endpoints:**
+- POST `/zoho_timers` - Create timer record with active_date
+- POST `/zoho_timer_intervals` - Create time interval linked to timer
 
-  // Create TimeEvent in local state only
-  const newEvent: TimeEvent = {
-    id: createId(),
-    groupId,
-    timerId,
-    projectName: group.projectName,
-    taskName: timer.taskName,
-    notes: timer.notes,
-    startTime,
-    endTime,
-    backendIntervalId: null, // Not persisted to backend
-    activeDate: selectedDate,
-  };
-
-  setTimeEvents([...timeEvents, newEvent]);
-};
-```
-
-**Xano API Endpoints:**
-
-**1. Create Timer:**
-- **Method:** POST
-- **URL:** `${WEBAPP_API_BASE_URL}/zoho_timers`
-- **Authentication:** Bearer token (user ID derived from auth token by backend)
-- **Request Body:**
-```typescript
-interface CreateTimerPayload {
-  zoho_project_id: string;
-  zoho_task_id: string;
-  notes: string;
-  active_date: string; // YYYY-MM-DD format
-}
-```
-- **Response:**
-```typescript
-interface ZohoTimer {
-  id: number;
-  dappit_user_id: number;
-  zoho_project_id: string;
-  zoho_task_id: string;
-  notes: string;
-  active_date: string;
-  total_duration: number; // seconds
-  status: "idle" | "running" | "stopped";
-  synced_to_zoho: boolean;
-  zoho_time_entry_id: string;
-  created_at: number;
-  updated_at: number;
-}
-```
-
-**2. Create Time Interval:**
-- **Method:** POST
-- **URL:** `${WEBAPP_API_BASE_URL}/zoho_timer_intervals`
-- **Authentication:** Bearer token
-- **Request Body:**
-```typescript
-interface CreateIntervalPayload {
-  zoho_timer_id: number;
-  start_time: number; // Unix timestamp (milliseconds)
-  end_time: number; // Unix timestamp (milliseconds)
-  duration: number; // seconds
-}
-```
-- **Response:**
-```typescript
-interface ZohoTimerInterval {
-  id: number;
-  created_at: number;
-  zoho_timer_id: number;
-  start_time: number;
-  end_time: number;
-  duration: number;
-}
-```
-
-**Implementation Approach:**
-1. Add `backendTimerId` and `lastActiveDate` fields to `TimerData` interface for tracking backend state
-2. Add `backendIntervalId` and `activeDate` fields to `TimeEvent` interface
-3. Create Xano API client library (`src/lib/xano-timers.ts`) with type-safe functions
-4. Update `TimeEntryModal` to capture and pass the selected date to parent handler
-5. Implement conditional timer creation logic:
-   - Check if timer has `backendTimerId` AND `lastActiveDate` matches selected date
-   - If no backend timer exists OR date differs → Create new backend timer
-   - Store backend timer ID in frontend state
-6. Always create interval record after ensuring timer exists
-7. Add loading and error states for user feedback
-8. Update frontend `TimeEvent` with backend IDs for future operations
-
-**Error Handling Strategy:**
-- Try-catch blocks around both API calls
-- Custom `XanoTimerError` class for typed error handling
-- User-friendly error messages displayed in modal
-- Early return on authentication failure
-- State rollback on API failures (don't create frontend TimeEvent if backend fails)
-- Loading states prevent duplicate submissions
+**Implementation:**
+1. Created Xano API client library (`src/lib/xano-timers.ts`) with type-safe functions and custom error handling
+2. Extended `TimerData` interface with `backendTimerId` and `lastActiveDate` for state tracking
+3. Extended `TimeEvent` interface with `backendIntervalId` and `activeDate` for backend linkage
+4. Implemented conditional timer creation: creates new backend timer if none exists OR if date differs from last active date
+5. Added loading/error states in `TimeEntryModal` with user-friendly feedback
+6. Updated `handleAddManualTime` to async with try-catch error handling and state rollback on failures
 
 **Code Changes:**
+- `src/lib/xano-timers.ts` (NEW) - Xano API client with type definitions, error handling, helper functions
+- `src/components/MultiTimer.tsx` - Updated interfaces, async `handleAddManualTime`, state management for backend IDs
+- `src/components/TimeEntryModal.tsx` - Added selectedDate parameter, loading states, error display
 
-**1. New File: `src/lib/xano-timers.ts`** (198 lines)
-```typescript
-// Xano Timer API Client with type definitions and error handling
-export class XanoTimerError extends Error {
-  constructor(message: string, public statusCode?: number) {
-    super(message);
-    this.name = "XanoTimerError";
-  }
-}
+**Notes:**
+- Backend IDs stored in frontend state enable future edit/delete operations
+- Date-based timer logic allows historical tracking with one backend timer per date
+- Build validation passed, E2E testing pending backend deployment
 
-export async function createZohoTimer(
-  payload: CreateTimerPayload,
-  authToken: string
-): Promise<ZohoTimer> {
-  const response = await fetch(`${WEBAPP_API_BASE_URL}/zoho_timers`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${authToken}`,
-    },
-    body: JSON.stringify(payload),
-  });
+---
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new XanoTimerError(
-      errorText || `Failed to create timer (${response.status})`,
-      response.status
-    );
-  }
+#### Function: Delete Time Interval Backend Sync
+**Status:** ✅ Complete
 
-  return await response.json();
-}
+**Purpose:** Enable deletion of time intervals with backend synchronization, automatically updating parent timer's total_duration in Xano when intervals are deleted from the frontend.
 
-// Similar implementation for createZohoTimerInterval, getTimersForDate
-// Helper functions: formatDateForXano, getTodayDateString
-```
+**API Endpoints:**
+- DELETE `/zoho_timer_intervals/{id}` - Delete interval and update parent timer duration
 
-**2. Modified: `src/components/MultiTimer.tsx`**
+**Implementation:**
+1. Added `deleteZohoTimerInterval` function to Xano API client with proper authentication and error handling
+2. Updated `handleDeleteTimeSlot` to async function that calls backend DELETE before removing from frontend state
+3. Implemented conditional backend deletion: only calls API if event has `backendIntervalId` (supports legacy events without backend IDs)
+4. Added error handling with user-friendly messages and state preservation on failure
+5. Prevents frontend deletion if backend deletion fails to maintain data consistency
 
-Updated interfaces:
-```typescript
-interface TimerData {
-  id: string;
-  taskId: string | null;
-  taskName: string;
-  notes: string;
-  elapsed: number;
-  backendTimerId: number | null; // NEW: Xano zoho_timers.id
-  lastActiveDate: string | null; // NEW: YYYY-MM-DD format
-}
+**Code Changes:**
+- `src/lib/xano-timers.ts:198-236` - Added `deleteZohoTimerInterval` function with error handling
+- `src/components/MultiTimer.tsx:1159-1213` - Made `handleDeleteTimeSlot` async, added backend deletion logic
+- `src/components/MultiTimer.tsx:8` - Added `deleteZohoTimerInterval` to imports
 
-interface TimeEvent {
-  id: string;
-  groupId: string;
-  timerId: string;
-  projectName: string;
-  taskName: string;
-  notes: string;
-  startTime: number;
-  endTime: number | null;
-  backendIntervalId: number | null; // NEW: Xano interval ID
-  activeDate: string; // NEW: YYYY-MM-DD format
-}
-```
-
-Updated `handleAddManualTime` (line 967-1110):
-```typescript
-const handleAddManualTime = async (
-  groupId: string,
-  timerId: string,
-  startTime: number,
-  endTime: number,
-  selectedDate: string // NEW parameter
-) => {
-  const group = groups.find((g) => g.id === groupId);
-  const timer = group?.timers.find((t) => t.id === timerId);
-  if (!group || !timer) return;
-
-  // Get auth (user ID will be derived from token by backend)
-  const authToken = authClient.getToken();
-  if (!authToken) {
-    setApiError("Please log in to save time entries");
-    return;
-  }
-
-  setIsSubmittingTime(true);
-  setApiError(null);
-
-  let backendTimerId = timer.backendTimerId;
-
-  // STEP 1: Create/recreate timer if needed
-  if (!backendTimerId || timer.lastActiveDate !== selectedDate) {
-    try {
-      const timerPayload: CreateTimerPayload = {
-        zoho_project_id: group.projectId || "",
-        zoho_task_id: timer.taskId || "",
-        notes: timer.notes,
-        active_date: selectedDate,
-      };
-
-      const createdTimer = await createZohoTimer(timerPayload, authToken);
-      backendTimerId = createdTimer.id;
-
-      // Update frontend state with backend ID
-      setGroups((prevGroups) =>
-        prevGroups.map((g) =>
-          g.id === groupId
-            ? {
-                ...g,
-                timers: g.timers.map((t) =>
-                  t.id === timerId
-                    ? { ...t, backendTimerId, lastActiveDate: selectedDate }
-                    : t
-                ),
-              }
-            : g
-        )
-      );
-    } catch (error) {
-      if (error instanceof XanoTimerError) {
-        setApiError(`Failed to create timer: ${error.message}`);
-      } else {
-        setApiError("Failed to create timer. Please try again.");
-      }
-      setIsSubmittingTime(false);
-      return;
-    }
-  }
-
-  // STEP 2: Create interval
-  try {
-    const intervalPayload: CreateIntervalPayload = {
-      zoho_timer_id: backendTimerId!,
-      start_time: startTime,
-      end_time: endTime,
-      duration: Math.floor((endTime - startTime) / 1000),
-    };
-
-    const createdInterval = await createZohoTimerInterval(
-      intervalPayload,
-      authToken
-    );
-
-    // STEP 3: Create frontend TimeEvent with backend IDs
-    const newEvent: TimeEvent = {
-      id: createId(),
-      groupId,
-      timerId,
-      projectName: group.projectName,
-      taskName: timer.taskName,
-      notes: timer.notes,
-      startTime,
-      endTime,
-      backendIntervalId: createdInterval.id,
-      activeDate: selectedDate,
-    };
-
-    const updatedEvents = [...timeEvents, newEvent];
-    setTimeEvents(updatedEvents);
-
-    // Recalculate elapsed time
-    setGroups((prevGroups) =>
-      prevGroups.map((g) =>
-        g.id === groupId
-          ? {
-              ...g,
-              timers: g.timers.map((t) =>
-                t.id === timerId
-                  ? {
-                      ...t,
-                      elapsed: calculateElapsedFromEvents(
-                        timerId,
-                        updatedEvents,
-                        runningSession
-                      ),
-                    }
-                  : t
-              ),
-            }
-          : g
-      )
-    );
-
-    setIsSubmittingTime(false);
-  } catch (error) {
-    if (error instanceof XanoTimerError) {
-      setApiError(`Failed to save time entry: ${error.message}`);
-    } else {
-      setApiError("Failed to save time entry. Please try again.");
-    }
-    setIsSubmittingTime(false);
-  }
-};
-```
-
-Added state variables (line 515-516):
-```typescript
-const [isSubmittingTime, setIsSubmittingTime] = useState(false);
-const [apiError, setApiError] = useState<string | null>(null);
-```
-
-**3. Modified: `src/components/TimeEntryModal.tsx`**
-
-Updated props interface (line 5-15):
-```typescript
-interface TimeEntryModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  onAddTime: (startTime: number, endTime: number, selectedDate: string) => void; // Added selectedDate
-  projectName: string;
-  taskName: string;
-  notes: string;
-  isTimerActive: boolean;
-  isSubmitting?: boolean; // NEW
-  apiError?: string | null; // NEW
-}
-```
-
-Updated `validateAndSubmit` to pass selectedDate (line 130):
-```typescript
-onAddTime(startTime, endTime, selectedDate);
-```
-
-Added API error display (line 302-309):
-```typescript
-{apiError && (
-  <div className="mb-4 rounded-lg bg-red-50 p-3 dark:bg-red-900/20">
-    <div className="text-sm font-medium text-red-900 dark:text-red-300">
-      {apiError}
-    </div>
-  </div>
-)}
-```
-
-Updated submit button with loading state (line 319-326):
-```typescript
-<button
-  onClick={validateAndSubmit}
-  disabled={isSubmitting}
-  className="... disabled:cursor-not-allowed disabled:opacity-50"
->
-  {isSubmitting ? "Saving..." : "Add Time"}
-</button>
-```
-
-**Testing Performed:**
-- [✓] Build validation: `npm run vercel-build` passes successfully
-- [✓] Type checking: No TypeScript errors
-- [✓] Lint checking: ESLint passes (pre-existing error in build.js unrelated)
-- [✓] Code review: Implementation logic verified
-- [ ] Manual E2E testing (requires backend deployment)
-- [ ] Network failure scenarios (requires backend deployment)
-- [ ] Performance validation (requires backend deployment)
-
-**Results:**
-**What Worked Well:**
-- Clean separation of concerns with dedicated API client library
-- Type-safe interfaces prevent runtime errors
-- Date-based timer logic enables proper historical tracking
-- Error handling provides clear user feedback
-- Loading states prevent duplicate submissions
-- Build compiles successfully with no errors
-
-**Implementation Notes:**
-- Backend IDs are stored in frontend state for future operations (edit, delete, sync)
-- The `active_date` field enables date-based timer segregation as specified
-- Frontend timer cards can map to multiple backend timer records (one per date)
-- Error messages are user-friendly and actionable
-- State updates are batched efficiently to minimize re-renders
-
-**Lessons Learned:**
-1. **Date-Based Timer Logic:** The requirement for same timer card to create different backend records per date was crucial - implemented via `lastActiveDate` tracking
-2. **Conditional Timer Creation:** The check `if (!backendTimerId || timer.lastActiveDate !== selectedDate)` handles both first-time use and date changes
-3. **Bi-directional State Sync:** Storing backend IDs in frontend structures enables future operations (edit, delete, sync to Zoho)
-4. **Error Handling:** Custom error class and try-catch blocks provide robust error handling with user feedback
-5. **Backward Compatibility:** New fields are nullable and have proper fallbacks in `normaliseTimer` helper
-
-**Future Considerations:**
-1. Implement edit functionality for manual time entries (requires PUT endpoint)
-2. Implement delete functionality (requires DELETE endpoint)
-3. Add sync indicator to show which entries are persisted to backend
-4. Handle offline scenarios with queue and sync on reconnect
-5. Add optimistic UI updates for better perceived performance
-6. Implement timer start/stop backend persistence
-7. Add total_duration update to backend timer when intervals change
-
-**Related Files Modified:**
-- `src/lib/xano-timers.ts` - NEW: Xano API client with type definitions, error handling, and helper functions
-- `src/components/MultiTimer.tsx` - Updated interfaces, state management, and `handleAddManualTime` implementation
-- `src/components/TimeEntryModal.tsx` - Added selectedDate parameter, loading states, and error display
-
-**Git Commit:**
-- Branch: main
-- Next commit will be: "feat: integrate manual time entry with Xano backend"
+**Notes:**
+- Backend automatically adjusts parent timer's duration when interval is deleted
+- Graceful handling of legacy intervals created before backend integration (no backendIntervalId)
+- Data consistency maintained by preventing frontend deletion if backend call fails
+- Build validation passed successfully
 
 ---
 
 #### Function: [Function Name]
-**Date:** YYYY-MM-DD
 **Status:** 🚧 In Progress | ✅ Complete | ❌ Blocked
-**Estimated Time:** X hours
-**Actual Time:** X hours
 
-**Purpose:**
-Brief description of what this function does and why it's needed.
+**Purpose:** [One-line description of what this function does]
 
-**Current Local Implementation:**
-```typescript
-// Copy the existing localStorage-based code
-```
+**API Endpoints:**
+- [METHOD] `/endpoint` - [Description]
 
-**Xano API Endpoint:**
-- **Method:** GET | POST | PUT | DELETE
-- **URL:** `/api/xano/[endpoint]`
-- **Authentication:** Bearer token
-- **Request Body:**
-```typescript
-// TypeScript interface
-```
-- **Response:**
-```typescript
-// TypeScript interface
-```
-
-**Implementation Approach:**
-1. Step-by-step plan
-2. Error handling strategy
-3. Rollback plan if needed
+**Implementation:**
+1. [Key implementation step]
+2. [Key implementation step]
+3. [Key implementation step]
 
 **Code Changes:**
-```typescript
-// New or modified code with comments
-```
+- `path/to/file1.ts` - [Brief description]
+- `path/to/file2.ts` - [Brief description]
 
-**Testing Performed:**
-- [ ] Unit tests (if applicable)
-- [ ] Manual testing scenario 1
-- [ ] Manual testing scenario 2
-- [ ] Edge case testing
-- [ ] Performance validation
-
-**Results:**
-- What worked well
-- What challenges were encountered
-- Performance metrics (response times, etc.)
-
-**Lessons Learned:**
-- Key insights from this implementation
-- Things to watch for in future functions
-- Improvements for next iteration
-
-**Related Files Modified:**
-- `path/to/file1.ts` - [brief description]
-- `path/to/file2.ts` - [brief description]
-
-**Git Commit:**
-- Commit hash: `abc123`
-- Commit message: "feat: integrate [function name] with Xano"
+**Notes:**
+- [Important observations or issues]
+- [Any blockers or pending work]
 
 ---
 
@@ -851,11 +444,11 @@ This section captures important architectural and implementation decisions.
 
 ### Overall Progress
 
-**Phase 1: Core CRUD Operations** - 0% Complete
-- [ ] Function 1: Create time event
+**Phase 1: Core CRUD Operations** - 50% Complete
+- [x] Function 1: Create time event (manual entry)
 - [ ] Function 2: Update time event
 - [ ] Function 3: Read time events
-- [ ] Function 4: Delete time event
+- [x] Function 4: Delete time event
 
 **Phase 2: Project/Task Sync** - 0% Complete
 - [ ] Function 5-8: [To be defined]
@@ -863,7 +456,7 @@ This section captures important architectural and implementation decisions.
 **Phase 3: Advanced Features** - 0% Complete
 - [ ] Function 9+: [To be defined]
 
-**Total Integration Progress:** 0%
+**Total Integration Progress:** 50% (Phase 1)
 
 ---
 

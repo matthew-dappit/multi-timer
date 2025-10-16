@@ -5,6 +5,7 @@ import {authClient} from "@/lib/auth";
 import {
   createZohoTimer,
   createZohoTimerInterval,
+  deleteZohoTimerInterval,
   XanoTimerError,
   type CreateTimerPayload,
   type CreateIntervalPayload,
@@ -1155,12 +1156,35 @@ export default function MultiTimer() {
     }
   };
 
-  const handleDeleteTimeSlot = (eventId: string) => {
+  const handleDeleteTimeSlot = async (eventId: string) => {
     // Find the event to get timer info
     const event = timeEvents.find((e) => e.id === eventId);
     if (!event) return;
 
-    // Remove the event
+    // If this event has a backend interval ID, delete it from the backend first
+    if (event.backendIntervalId !== null) {
+      const authToken = authClient.getToken();
+
+      if (!authToken) {
+        console.error("User not authenticated");
+        setApiError("Please log in to delete time entries");
+        return;
+      }
+
+      try {
+        await deleteZohoTimerInterval(event.backendIntervalId, authToken);
+      } catch (error) {
+        console.error("Failed to delete interval from backend:", error);
+        if (error instanceof XanoTimerError) {
+          setApiError(`Failed to delete time entry: ${error.message}`);
+        } else {
+          setApiError("Failed to delete time entry. Please try again.");
+        }
+        return; // Don't remove from frontend if backend delete failed
+      }
+    }
+
+    // Remove the event from frontend state
     const updatedEvents = timeEvents.filter((e) => e.id !== eventId);
     setTimeEvents(updatedEvents);
 
