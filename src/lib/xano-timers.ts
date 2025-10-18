@@ -44,6 +44,24 @@ export interface CreateIntervalPayload {
   duration: number; // seconds
 }
 
+export interface StartTimerPayload {
+  user_id: number;
+  zoho_project_id: string;
+  zoho_task_id: string;
+  notes?: string;
+  start_time?: number | null;
+}
+
+export interface ResumeTimerPayload {
+  timer_id: number;
+  resume_time?: number | null;
+}
+
+export interface StopTimerPayload {
+  timer_id: number;
+  end_time?: number | null;
+}
+
 export class XanoTimerError extends Error {
   constructor(
     message: string,
@@ -53,6 +71,18 @@ export class XanoTimerError extends Error {
     this.name = "XanoTimerError";
   }
 }
+
+const extractTimerFromResponse = (payload: unknown): ZohoTimer => {
+  if (payload && typeof payload === "object") {
+    const container = payload as Record<string, unknown>;
+    const candidate = (container.timer ?? payload) as ZohoTimer | undefined;
+    if (candidate && typeof candidate === "object") {
+      return candidate as ZohoTimer;
+    }
+  }
+
+  throw new XanoTimerError("Invalid timer response from Xano");
+};
 
 /**
  * Create a new timer in Xano backend
@@ -126,6 +156,111 @@ export async function createZohoTimerInterval(
     }
     throw new XanoTimerError(
       `Network error creating interval: ${error instanceof Error ? error.message : "Unknown error"}`
+    );
+  }
+}
+
+export async function startZohoTimer(
+  payload: StartTimerPayload,
+  authToken: string
+): Promise<ZohoTimer> {
+  try {
+    const response = await fetch(`${WEBAPP_API_BASE_URL}/zoho_timers/start`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${authToken}`,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new XanoTimerError(
+        errorText || `Failed to start timer (${response.status})`,
+        response.status
+      );
+    }
+
+    const data = await response.json();
+
+    return extractTimerFromResponse(data);
+  } catch (error) {
+    if (error instanceof XanoTimerError) {
+      throw error;
+    }
+    throw new XanoTimerError(
+      `Network error starting timer: ${error instanceof Error ? error.message : "Unknown error"}`
+    );
+  }
+}
+
+export async function resumeZohoTimer(
+  payload: ResumeTimerPayload,
+  authToken: string
+): Promise<ZohoTimer> {
+  try {
+    const response = await fetch(`${WEBAPP_API_BASE_URL}/zoho_timers/resume`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${authToken}`,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new XanoTimerError(
+        errorText || `Failed to resume timer (${response.status})`,
+        response.status
+      );
+    }
+
+    const data = await response.json();
+
+    return extractTimerFromResponse(data);
+  } catch (error) {
+    if (error instanceof XanoTimerError) {
+      throw error;
+    }
+    throw new XanoTimerError(
+      `Network error resuming timer: ${error instanceof Error ? error.message : "Unknown error"}`
+    );
+  }
+}
+
+export async function stopZohoTimer(
+  payload: StopTimerPayload,
+  authToken: string
+): Promise<ZohoTimer> {
+  try {
+    const response = await fetch(`${WEBAPP_API_BASE_URL}/zoho_timers/stop`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${authToken}`,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new XanoTimerError(
+        errorText || `Failed to stop timer (${response.status})`,
+        response.status
+      );
+    }
+
+    const data = await response.json();
+
+    return extractTimerFromResponse(data);
+  } catch (error) {
+    if (error instanceof XanoTimerError) {
+      throw error;
+    }
+    throw new XanoTimerError(
+      `Network error stopping timer: ${error instanceof Error ? error.message : "Unknown error"}`
     );
   }
 }

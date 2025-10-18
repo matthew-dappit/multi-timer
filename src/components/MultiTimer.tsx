@@ -6,9 +6,14 @@ import {
   createZohoTimer,
   createZohoTimerInterval,
   deleteZohoTimerInterval,
+  formatDateForXano,
+  resumeZohoTimer,
+  startZohoTimer,
+  stopZohoTimer,
   XanoTimerError,
   type CreateTimerPayload,
   type CreateIntervalPayload,
+  type StartTimerPayload,
 } from "@/lib/xano-timers";
 import Timer from "./Timer";
 import TimeEntryModal from "./TimeEntryModal";
@@ -343,7 +348,6 @@ const createGroup = (index: number): TimerGroup => ({
 });
 
 const STORAGE_KEY = "multi-timer/state";
-const TIME_EVENTS_KEY = "multi-timer/time-events";
 const RUNNING_SESSION_KEY = "multi-timer/running";
 
 const normaliseTimer = (candidate: unknown): TimerData => {
@@ -515,6 +519,8 @@ export default function MultiTimer() {
   >({});
   const [isSubmittingTime, setIsSubmittingTime] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
+  const [timerSyncError, setTimerSyncError] = useState<string | null>(null);
+  const [isTimerSyncing, setIsTimerSyncing] = useState(false);
   const hasHydrated = useRef(false);
 
   const tasksByProject = useMemo(() => {
@@ -577,18 +583,6 @@ export default function MultiTimer() {
     return Math.floor((completedTime + runningTime) / 1000);
   };
 
-  // Helper: Filter events for today only
-  const filterTodayEvents = (events: TimeEvent[]): TimeEvent[] => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const todayStart = today.getTime();
-    const todayEnd = todayStart + 24 * 60 * 60 * 1000;
-
-    return events.filter(
-      (event) => event.startTime >= todayStart && event.startTime < todayEnd
-    );
-  };
-
   // Load state from localStorage on mount (hydration)
   useEffect(() => {
     if (hasHydrated.current) return;
@@ -596,7 +590,7 @@ export default function MultiTimer() {
 
     let nextGroups: TimerGroup[] = [createGroup(1)];
     let nextIsCompact = false;
-    let nextTimeEvents: TimeEvent[] = [];
+    const nextTimeEvents: TimeEvent[] = [];
     let nextRunningSession: RunningSession | null = null;
 
     try {
@@ -623,34 +617,39 @@ export default function MultiTimer() {
         }
       }
 
-      // Load time events
-      const storedEvents = window.localStorage.getItem(TIME_EVENTS_KEY);
-      if (storedEvents) {
-        const parsed = JSON.parse(storedEvents);
-        if (Array.isArray(parsed)) {
-          // Filter to today's events only
-          nextTimeEvents = filterTodayEvents(parsed);
-        }
-      }
-
       // Load running session
       const storedSession = window.sessionStorage.getItem(RUNNING_SESSION_KEY);
       if (storedSession) {
         const parsed = JSON.parse(storedSession) as RunningSession;
-        // Validate: does this timer still exist in our groups?
-        const timerExists = nextGroups.some((group) =>
+        const owningGroup = nextGroups.find((group) =>
           group.timers.some((timer) => timer.id === parsed.timerId)
         );
-        if (timerExists) {
-          nextRunningSession = parsed;
-        } else {
-          // Timer was deleted, close the event
-          const eventToClose = nextTimeEvents.find(
-            (e) => e.id === parsed.eventId && e.endTime === null
+
+        if (owningGroup) {
+          const owningTimer = owningGroup.timers.find(
+            (timer) => timer.id === parsed.timerId
           );
-          if (eventToClose) {
-            eventToClose.endTime = Date.now();
+
+          if (owningTimer) {
+            nextRunningSession = parsed;
+            nextTimeEvents.push({
+              id: parsed.eventId,
+              groupId: owningGroup.id,
+              timerId: owningTimer.id,
+              projectName: owningGroup.projectName,
+              taskName: owningTimer.taskName,
+              notes: owningTimer.notes,
+              startTime: parsed.startTime,
+              endTime: null,
+              backendIntervalId: owningTimer.backendTimerId ?? null,
+              activeDate:
+                owningTimer.lastActiveDate ??
+                formatDateForXano(new Date(parsed.startTime)),
+            });
+          } else {
+            window.sessionStorage.removeItem(RUNNING_SESSION_KEY);
           }
+        } else {
           window.sessionStorage.removeItem(RUNNING_SESSION_KEY);
         }
       }
@@ -826,17 +825,6 @@ export default function MultiTimer() {
     }
   }, [groups, isCompact]);
 
-  // Persist time events to localStorage
-  useEffect(() => {
-    if (!hasHydrated.current) return;
-    try {
-      const payload = JSON.stringify(timeEvents);
-      window.localStorage.setItem(TIME_EVENTS_KEY, payload);
-    } catch (error) {
-      console.error("Failed to persist time events", error);
-    }
-  }, [timeEvents]);
-
   // Persist running session to sessionStorage
   useEffect(() => {
     if (!hasHydrated.current) return;
@@ -879,85 +867,372 @@ export default function MultiTimer() {
     setGroups((previous) => updater(previous));
   };
 
-  // Start a timer
-  const handleTimerStart = (groupId: string, timerId: string) => {
-    // Stop any currently running timer
-    if (runningSession) {
-      handleTimerStop();
+  const stopRunningTimer = async (
+    stopTime = Date.now()
+  ): Promise<TimeEvent[]> => {
+    const session = runningSession;
+    if (!session) {
+      return timeEvents;
     }
 
-    // Find the timer and group
+    const group = groups.find((g) => g.id === session.groupId);
+    const timer = group?.timers.find((t) => t.id === session.timerId);
+    const authToken = authClient.getToken();
+
+    const previousEvents = timeEvents;
+    const previousGroups = groups;
+    const previousSession = runningSession;
+
+    let updatedEvents: TimeEvent[] = previousEvents;
+
+    setTimeEvents((prevEvents) => {
+      const existingIndex = prevEvents.findIndex(
+        (event) => event.id === session.eventId
+      );
+
+      if (existingIndex === -1) {
+        if (!group || !timer) {
+          updatedEvents = prevEvents;
+          return prevEvents;
+        }
+
+        const inferredActiveDate =
+          timer.lastActiveDate ?? formatDateForXano(new Date(session.startTime));
+
+        const fallbackEvent: TimeEvent = {
+          id: session.eventId,
+          groupId: group.id,
+          timerId: timer.id,
+          projectName: group.projectName,
+          taskName: timer.taskName,
+          notes: timer.notes,
+          startTime: session.startTime,
+          endTime: stopTime,
+          backendIntervalId: null,
+          activeDate: inferredActiveDate,
+        };
+
+        updatedEvents = [...prevEvents, fallbackEvent];
+        return updatedEvents;
+      }
+
+      updatedEvents = prevEvents.map((event, index) =>
+        index === existingIndex ? {...event, endTime: stopTime} : event
+      );
+      return updatedEvents;
+    });
+
+    setRunningSession(null);
+
+    setGroups((prevGroups) =>
+      prevGroups.map((groupItem) => {
+        if (groupItem.id !== session.groupId) {
+          return groupItem;
+        }
+
+        return {
+          ...groupItem,
+          timers: groupItem.timers.map((timerItem) =>
+            timerItem.id === session.timerId
+              ? {
+                  ...timerItem,
+                  elapsed: calculateElapsedFromEvents(
+                    timerItem.id,
+                    updatedEvents,
+                    null
+                  ),
+                }
+              : timerItem
+          ),
+        };
+      })
+    );
+
+    if (!timer?.backendTimerId || !authToken) {
+      return updatedEvents;
+    }
+
+    try {
+      const backendTimer = await stopZohoTimer(
+        {
+          timer_id: timer.backendTimerId,
+          end_time: stopTime,
+        },
+        authToken
+      );
+
+      setGroups((prevGroups) =>
+        prevGroups.map((groupItem) => {
+          if (groupItem.id !== session.groupId) {
+            return groupItem;
+          }
+
+          return {
+            ...groupItem,
+            timers: groupItem.timers.map((timerItem) =>
+              timerItem.id === session.timerId
+                ? {
+                    ...timerItem,
+                    backendTimerId: backendTimer.id,
+                    lastActiveDate:
+                      backendTimer.active_date ?? timerItem.lastActiveDate,
+                    elapsed:
+                      typeof backendTimer.total_duration === "number"
+                        ? backendTimer.total_duration
+                        : calculateElapsedFromEvents(
+                            timerItem.id,
+                            updatedEvents,
+                            null
+                          ),
+                  }
+                : timerItem
+            ),
+          };
+        })
+      );
+
+      setTimeEvents((prevEvents) =>
+        prevEvents.map((event) =>
+          event.id === session.eventId
+            ? {
+                ...event,
+                activeDate:
+                  backendTimer.active_date ?? event.activeDate,
+              }
+            : event
+        )
+      );
+    } catch (error) {
+      console.error("Failed to stop backend timer", error);
+      setTimeEvents(previousEvents);
+      setRunningSession(previousSession);
+      setGroups(previousGroups);
+
+      if (error instanceof XanoTimerError) {
+        throw error;
+      }
+
+      throw new XanoTimerError("Failed to stop timer. Please try again.");
+    }
+
+    return updatedEvents;
+  };
+
+  // Start a timer
+  const handleTimerStart = async (groupId: string, timerId: string) => {
+    if (isTimerSyncing) return;
+
     const group = groups.find((g) => g.id === groupId);
     const timer = group?.timers.find((t) => t.id === timerId);
     if (!group || !timer) return;
 
-    // Create new time event
-    const now = Date.now();
-    const today = new Date(now);
-    const activeDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+    const authToken = authClient.getToken();
+    const user = authClient.getUser();
 
-    const newEvent: TimeEvent = {
-      id: createId(),
-      groupId,
-      timerId,
-      projectName: group.projectName,
-      taskName: timer.taskName,
-      notes: timer.notes,
-      startTime: now,
-      endTime: null,
-      backendIntervalId: null, // Will be set when synced to backend
-      activeDate,
-    };
+    if (!authToken || !user) {
+      setTimerSyncError("Please log in to start timers.");
+      return;
+    }
 
-    // Create running session
-    const newSession: RunningSession = {
-      timerId,
-      groupId,
-      eventId: newEvent.id,
-      startTime: Date.now(),
-    };
+    setIsTimerSyncing(true);
+    setTimerSyncError(null);
 
-    // Update state
-    setTimeEvents((prev) => [...prev, newEvent]);
-    setRunningSession(newSession);
+    let hasOptimisticStart = false;
+    const startTimestamp = Date.now();
+    const optimisticActiveDate = formatDateForXano(new Date(startTimestamp));
+    const previousBackendTimerId = timer.backendTimerId ?? null;
+    const previousLastActiveDate = timer.lastActiveDate ?? null;
+    const newEventId = createId();
+
+    try {
+      if (runningSession) {
+        await stopRunningTimer(startTimestamp);
+      }
+
+      const newEvent: TimeEvent = {
+        id: newEventId,
+        groupId,
+        timerId,
+        projectName: group.projectName,
+        taskName: timer.taskName,
+        notes: timer.notes,
+        startTime: startTimestamp,
+        endTime: null,
+        backendIntervalId: null,
+        activeDate: optimisticActiveDate,
+      };
+
+      const newSession: RunningSession = {
+        timerId,
+        groupId,
+        eventId: newEvent.id,
+        startTime: startTimestamp,
+      };
+
+      setRunningSession(newSession);
+
+      setTimeEvents((prevEvents) => {
+        const nextEvents = [...prevEvents, newEvent];
+
+        setGroups((prevGroups) =>
+          prevGroups.map((groupItem) =>
+            groupItem.id === groupId
+              ? {
+                  ...groupItem,
+                  timers: groupItem.timers.map((timerItem) =>
+                    timerItem.id === timerId
+                      ? {
+                          ...timerItem,
+                          elapsed: calculateElapsedFromEvents(
+                            timerItem.id,
+                            nextEvents,
+                            newSession
+                          ),
+                        }
+                      : timerItem
+                  ),
+                }
+              : groupItem
+          )
+        );
+
+        return nextEvents;
+      });
+
+      hasOptimisticStart = true;
+
+      let backendTimerId = timer.backendTimerId;
+      let backendTimer: Awaited<ReturnType<typeof startZohoTimer>>;
+
+      if (!backendTimerId || timer.lastActiveDate !== optimisticActiveDate) {
+        const startPayload: StartTimerPayload = {
+          user_id: user.id,
+          zoho_project_id: group.projectId ?? "",
+          zoho_task_id: timer.taskId ?? "",
+          notes: timer.notes,
+          start_time: startTimestamp,
+        };
+        backendTimer = await startZohoTimer(startPayload, authToken);
+        backendTimerId = backendTimer.id;
+      } else {
+        backendTimer = await resumeZohoTimer(
+          {
+            timer_id: backendTimerId,
+            resume_time: startTimestamp,
+          },
+          authToken
+        );
+      }
+
+      const resolvedTimerId = backendTimerId ?? backendTimer.id;
+      const resolvedActiveDate = backendTimer.active_date ?? optimisticActiveDate;
+      const backendElapsed =
+        typeof backendTimer.total_duration === "number"
+          ? backendTimer.total_duration
+          : null;
+
+      setTimeEvents((prevEvents) => {
+        const nextEvents = prevEvents.map((event) =>
+          event.id === newEvent.id
+            ? {...event, activeDate: resolvedActiveDate}
+            : event
+        );
+
+        setGroups((prevGroups) =>
+          prevGroups.map((groupItem) =>
+            groupItem.id === groupId
+              ? {
+                  ...groupItem,
+                  timers: groupItem.timers.map((timerItem) =>
+                    timerItem.id === timerId
+                      ? {
+                          ...timerItem,
+                          backendTimerId: resolvedTimerId,
+                          lastActiveDate: resolvedActiveDate,
+                          elapsed:
+                            backendElapsed !== null
+                              ? backendElapsed
+                              : calculateElapsedFromEvents(
+                                  timerItem.id,
+                                  nextEvents,
+                                  newSession
+                                ),
+                        }
+                      : timerItem
+                  ),
+                }
+              : groupItem
+          )
+        );
+
+        return nextEvents;
+      });
+    } catch (error) {
+      if (hasOptimisticStart) {
+        setTimeEvents((events) => {
+          const revertedEvents = events.filter((event) => event.id !== newEventId);
+
+          setGroups((groupList) =>
+            groupList.map((groupItem) =>
+              groupItem.id === groupId
+                ? {
+                    ...groupItem,
+                    timers: groupItem.timers.map((timerItem) =>
+                      timerItem.id === timerId
+                        ? {
+                            ...timerItem,
+                            backendTimerId: previousBackendTimerId,
+                            lastActiveDate: previousLastActiveDate,
+                            elapsed: calculateElapsedFromEvents(
+                              timerItem.id,
+                              revertedEvents,
+                              null
+                            ),
+                          }
+                        : timerItem
+                    ),
+                  }
+                : groupItem
+            )
+          );
+
+          return revertedEvents;
+        });
+        setRunningSession(null);
+      }
+
+      if (error instanceof XanoTimerError) {
+        setTimerSyncError(error.message);
+      } else {
+        console.error("Failed to start timer", error);
+        setTimerSyncError("Failed to start timer. Please try again.");
+      }
+      setIsTimerSyncing(false);
+      return;
+    }
+
+    setIsTimerSyncing(false);
   };
 
   // Stop the currently running timer
-  const handleTimerStop = () => {
-    if (!runningSession) return;
+  const handleTimerStop = async () => {
+    if (!runningSession || isTimerSyncing) return;
 
-    const now = Date.now();
+    setIsTimerSyncing(true);
+    setTimerSyncError(null);
 
-    // Find and close the active event
-    setTimeEvents((prev) =>
-      prev.map((event) =>
-        event.id === runningSession.eventId ? {...event, endTime: now} : event
-      )
-    );
-
-    // Update elapsed time for the stopped timer
-    setGroups((prevGroups) =>
-      prevGroups.map((group) => ({
-        ...group,
-        timers: group.timers.map((timer) =>
-          timer.id === runningSession.timerId
-            ? {
-                ...timer,
-                elapsed: calculateElapsedFromEvents(
-                  timer.id,
-                  timeEvents.map((e) =>
-                    e.id === runningSession.eventId ? {...e, endTime: now} : e
-                  ),
-                  null
-                ),
-              }
-            : timer
-        ),
-      }))
-    );
-
-    // Clear running session
-    setRunningSession(null);
+    try {
+      await stopRunningTimer();
+    } catch (error) {
+      console.error("Failed to stop timer", error);
+      if (error instanceof XanoTimerError) {
+        setTimerSyncError(error.message);
+      } else {
+        setTimerSyncError("Failed to stop timer. Please try again.");
+      }
+    } finally {
+      setIsTimerSyncing(false);
+    }
   };
 
   // Manual time entry handlers
@@ -1399,6 +1674,12 @@ export default function MultiTimer() {
   return (
     <div className={`flex h-full w-full flex-col ${containerGap}`}>
       {totalSummary}
+
+      {timerSyncError && (
+        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
+          {timerSyncError}
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>

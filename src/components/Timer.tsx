@@ -20,8 +20,8 @@ interface TimerProps {
   isTaskOptionsLoading?: boolean;
   onTaskChange: (id: string, taskId: string | null, taskName: string) => void;
   onNotesChange: (id: string, notes: string) => void;
-  onStart?: () => void;
-  onStop?: () => void;
+  onStart?: () => void | Promise<void>;
+  onStop?: () => void | Promise<void>;
   onOpenTimeEntry?: () => void;
   onOpenTimeHistory?: () => void;
 }

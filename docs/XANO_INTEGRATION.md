@@ -75,25 +75,11 @@ This document tracks the iterative process of integrating the multi-timer applic
 
 #### Data Storage
 
-**localStorage Keys:**
-```typescript
-// Main application state
-'multi-timer/state' = {
-  groups: TimerGroup[]        // All timer groups and their timers
-  compactView: boolean
-  activeTab: string
-}
-
-// Complete time tracking history
-'multi-timer/time-events' = TimeEvent[]
-
-// Current running timer session (synced to sessionStorage)
-'multi-timer/running' = RunningSession | null
-
-// Authentication
-'multi-timer-auth-token' = string (JWT)
-'multi-timer-user' = { name: string, email: string }
-```
+**localStorage Keys (2025-10-16 update):**
+- `'multi-timer/state'`: persisted timer groups plus compact mode preference.
+- `'multi-timer/running'`: mirrors the currently active session in `sessionStorage` for tab restoration.
+- `'multi-timer-auth-token'` / `'multi-timer-user'`: authentication cache.
+- **Removed:** `'multi-timer/time-events'` is no longer written. Timer intervals are now fetched on demand, so history will refresh from Xano when needed instead of relying on localStorage.
 
 **Data Structures:**
 
@@ -285,6 +271,34 @@ Use this streamlined template for documenting each integration function:
 
 ---
 
+#### Function: Timer Start/Stop/Resume Backend Sync
+**Status:** ✅ Complete
+
+**Purpose:** Connect timer start, stop, and resume actions to Xano so live tracking stays synchronized with backend timer intervals and statuses.
+
+**API Endpoints:**
+- POST `/zoho_timers/start` - Create timer (when needed) and open first interval
+- POST `/zoho_timers/stop` - Close the active interval and update timer totals
+- POST `/zoho_timers/resume` - Reopen a stopped timer by creating a new interval
+
+**Implementation:**
+1. Updated API helpers to include `start_time`, `resume_time`, and `end_time` payloads and normalised responses that now return the timer object directly.
+2. Reworked `handleTimerStart`/`handleTimerStop` to perform optimistic UI updates using client-side timestamps, then reconcile elapsed totals once the backend timer comes back.
+3. Dropped localStorage persistence for interval history; the running session now drives optimistic updates while historical requests will re-fetch from Xano when required.
+
+**Code Changes:**
+- `src/lib/xano-timers.ts` - Adjusted payload types and helper return shapes for the new timestamp contract.
+- `src/components/MultiTimer.tsx` - Added optimistic start/stop logic, timestamp payloads, and removed localStorage interval persistence.
+- `src/components/Timer.tsx` - No change required in this round (callbacks already async-compatible).
+- `docs/XANO_INTEGRATION.md` - Documented the updated flow and payloads.
+
+**Notes:**
+- Start/resume requests now include the exact UI timestamp so optimistic updates match backend-calculated totals when the response arrives.
+- Backend responses return only the timer record; interval details are fetched separately when needed.
+- History views currently take a step back until the fetch-on-demand workflow is implemented (localStorage cache removed intentionally).
+
+---
+
 #### Function: [Function Name]
 **Status:** 🚧 In Progress | ✅ Complete | ❌ Blocked
 
@@ -310,38 +324,15 @@ Use this streamlined template for documenting each integration function:
 
 ## API Endpoints
 
-### Xano Endpoints (To Be Defined)
+### Timer Controls
 
-This section will be populated as we define the Xano API contract.
+- **POST `/zoho_timers/start`** – Body expects `user_id`, `zoho_project_id`, `zoho_task_id`, optional `notes`, optional `start_time` (Unix ms). Response returns the updated timer object.
+- **POST `/zoho_timers/resume`** – Body expects `timer_id` plus optional `resume_time` (Unix ms). Response returns the updated timer object.
+- **POST `/zoho_timers/stop`** – Body expects `timer_id` and optional `end_time` (Unix ms). Response returns the updated timer object with refreshed `total_duration` and status.
 
-#### Time Events
-
-| Endpoint | Method | Purpose | Status |
-|----------|--------|---------|--------|
-| `/api/xano/time-events` | GET | Fetch all time events for user | 📝 Planned |
-| `/api/xano/time-events` | POST | Create new time event | 📝 Planned |
-| `/api/xano/time-events/{id}` | PUT | Update existing time event | 📝 Planned |
-| `/api/xano/time-events/{id}` | DELETE | Delete time event | 📝 Planned |
-
-#### Timer Groups (Projects)
-
-| Endpoint | Method | Purpose | Status |
-|----------|--------|---------|--------|
-| `/api/xano/groups` | GET | Fetch all timer groups | 📝 Planned |
-| `/api/xano/groups` | POST | Create new group | 📝 Planned |
-| `/api/xano/groups/{id}` | PUT | Update group | 📝 Planned |
-| `/api/xano/groups/{id}` | DELETE | Delete group | 📝 Planned |
-
-#### Timers (Tasks)
-
-| Endpoint | Method | Purpose | Status |
-|----------|--------|---------|--------|
-| `/api/xano/timers` | GET | Fetch all timers for user | 📝 Planned |
-| `/api/xano/timers` | POST | Create new timer | 📝 Planned |
-| `/api/xano/timers/{id}` | PUT | Update timer | 📝 Planned |
-| `/api/xano/timers/{id}` | DELETE | Delete timer | 📝 Planned |
-
----
+**Key contract changes (2025-10-16):**
+- Interval records are no longer included in these responses; fetch them separately when history is requested.
+- Client-provided timestamps drive optimistic UI updates so that final totals align with backend calculations once responses arrive.
 
 ## Data Mapping
 
@@ -423,6 +414,12 @@ This section captures important architectural and implementation decisions.
 - Chose to maintain localStorage as primary source during transition
 - Xano will be secondary store initially, with gradual promotion to primary
 - This allows safe rollback if issues arise
+
+**[2025-10-16] - Optimistic Timer Controls:**
+- Removed localStorage persistence of interval history; timers now fetch intervals on demand to stay aligned with backend truth.
+- UI provides optimistic updates using client timestamps passed as `start_time`, `resume_time`, and `end_time` so backend totals match what the user saw immediately.
+- Xano timer endpoints now return only the timer object; interval inspection and history rely on future dedicated fetches.
+- Pending follow-up: the optimistic stop flow still flashes the previous elapsed total before reconciliation. We need to persist the running-session event into state earlier (or gate the display update) so elapsed seconds never jump backwards while awaiting the stop response.
 
 ---
 

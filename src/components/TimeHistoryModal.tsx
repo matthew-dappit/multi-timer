@@ -16,7 +16,7 @@ interface TimeHistoryModalProps {
   onClose: () => void;
   onAddTime: () => void;
   onEditEvent: (eventId: string) => void;
-  onStopTimer: () => void;
+  onStopTimer: () => void | Promise<void>;
   projectName: string;
   taskName: string;
   notes: string;
