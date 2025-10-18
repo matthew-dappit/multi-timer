@@ -21,7 +21,8 @@ import TimeHistoryModal from "./TimeHistoryModal";
 import EditTimeSlotModal from "./EditTimeSlotModal";
 
 const WEBAPP_API_BASE_URL =
-  process.env.NEXT_PUBLIC_WEBAPP_API_BASE_URL ?? "https://api.dappit.org/api:THWVRjoL";
+  process.env.NEXT_PUBLIC_WEBAPP_API_BASE_URL ??
+  "https://api.dappit.org/api:THWVRjoL";
 
 interface ZohoProject {
   id: string;
@@ -191,7 +192,11 @@ const ProjectPicker = ({
           strokeWidth={2}
           aria-hidden="true"
         >
-          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M19 9l-7 7-7-7"
+          />
         </svg>
       </button>
 
@@ -845,23 +850,27 @@ export default function MultiTimer() {
     if (!runningSession) return;
 
     const interval = setInterval(() => {
-      setGroups((prevGroups) =>
-        prevGroups.map((group) => ({
-          ...group,
-          timers: group.timers.map((timer) => ({
-            ...timer,
-            elapsed: calculateElapsedFromEvents(
-              timer.id,
-              timeEvents,
-              runningSession
-            ),
-          })),
-        }))
-      );
+      // Use functional update to get the latest timeEvents
+      setTimeEvents((currentEvents) => {
+        setGroups((prevGroups) =>
+          prevGroups.map((group) => ({
+            ...group,
+            timers: group.timers.map((timer) => ({
+              ...timer,
+              elapsed: calculateElapsedFromEvents(
+                timer.id,
+                currentEvents,
+                runningSession
+              ),
+            })),
+          }))
+        );
+        return currentEvents; // Don't modify timeEvents
+      });
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [runningSession, timeEvents]);
+  }, [runningSession]);
 
   const updateGroups = (updater: (groups: TimerGroup[]) => TimerGroup[]) => {
     setGroups((previous) => updater(previous));
@@ -883,21 +892,17 @@ export default function MultiTimer() {
     const previousGroups = groups;
     const previousSession = runningSession;
 
+    // Calculate updated events synchronously to avoid closure issues
     let updatedEvents: TimeEvent[] = previousEvents;
+    const existingIndex = previousEvents.findIndex(
+      (event) => event.id === session.eventId
+    );
 
-    setTimeEvents((prevEvents) => {
-      const existingIndex = prevEvents.findIndex(
-        (event) => event.id === session.eventId
-      );
-
-      if (existingIndex === -1) {
-        if (!group || !timer) {
-          updatedEvents = prevEvents;
-          return prevEvents;
-        }
-
+    if (existingIndex === -1) {
+      if (group && timer) {
         const inferredActiveDate =
-          timer.lastActiveDate ?? formatDateForXano(new Date(session.startTime));
+          timer.lastActiveDate ??
+          formatDateForXano(new Date(session.startTime));
 
         const fallbackEvent: TimeEvent = {
           id: session.eventId,
@@ -912,17 +917,18 @@ export default function MultiTimer() {
           activeDate: inferredActiveDate,
         };
 
-        updatedEvents = [...prevEvents, fallbackEvent];
-        return updatedEvents;
+        updatedEvents = [...previousEvents, fallbackEvent];
       }
-
-      updatedEvents = prevEvents.map((event, index) =>
+    } else {
+      updatedEvents = previousEvents.map((event, index) =>
         index === existingIndex ? {...event, endTime: stopTime} : event
       );
-      return updatedEvents;
-    });
+    }
 
+    // Update all state together to ensure consistency
     setRunningSession(null);
+
+    setTimeEvents(updatedEvents);
 
     setGroups((prevGroups) =>
       prevGroups.map((groupItem) => {
@@ -976,14 +982,11 @@ export default function MultiTimer() {
                     backendTimerId: backendTimer.id,
                     lastActiveDate:
                       backendTimer.active_date ?? timerItem.lastActiveDate,
+                    // Use backend total_duration if available, otherwise keep optimistic value
                     elapsed:
                       typeof backendTimer.total_duration === "number"
                         ? backendTimer.total_duration
-                        : calculateElapsedFromEvents(
-                            timerItem.id,
-                            updatedEvents,
-                            null
-                          ),
+                        : timerItem.elapsed,
                   }
                 : timerItem
             ),
@@ -996,8 +999,7 @@ export default function MultiTimer() {
           event.id === session.eventId
             ? {
                 ...event,
-                activeDate:
-                  backendTimer.active_date ?? event.activeDate,
+                activeDate: backendTimer.active_date ?? event.activeDate,
               }
             : event
         )
@@ -1125,7 +1127,8 @@ export default function MultiTimer() {
       }
 
       const resolvedTimerId = backendTimerId ?? backendTimer.id;
-      const resolvedActiveDate = backendTimer.active_date ?? optimisticActiveDate;
+      const resolvedActiveDate =
+        backendTimer.active_date ?? optimisticActiveDate;
       const backendElapsed =
         typeof backendTimer.total_duration === "number"
           ? backendTimer.total_duration
@@ -1170,7 +1173,9 @@ export default function MultiTimer() {
     } catch (error) {
       if (hasOptimisticStart) {
         setTimeEvents((events) => {
-          const revertedEvents = events.filter((event) => event.id !== newEventId);
+          const revertedEvents = events.filter(
+            (event) => event.id !== newEventId
+          );
 
           setGroups((groupList) =>
             groupList.map((groupItem) =>
