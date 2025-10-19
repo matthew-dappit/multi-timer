@@ -12,7 +12,7 @@ export interface ZohoTimer {
   zoho_project_id: string;
   zoho_task_id: string;
   notes: string;
-  active_date: string; // YYYY-MM-DD format
+  active_date: string | null; // YYYY-MM-DD format
   total_duration: number; // seconds
   status: "idle" | "running" | "stopped";
   synced_to_zoho: boolean;
@@ -35,6 +35,13 @@ export interface CreateTimerPayload {
   zoho_task_id: string;
   notes: string;
   active_date: string; // YYYY-MM-DD format
+}
+
+export interface UpdateTimerPayload {
+  zoho_project_id?: string | null;
+  zoho_task_id?: string | null;
+  notes?: string;
+  active_date?: string | null;
 }
 
 export interface CreateIntervalPayload {
@@ -156,6 +163,45 @@ export async function createZohoTimerInterval(
     }
     throw new XanoTimerError(
       `Network error creating interval: ${error instanceof Error ? error.message : "Unknown error"}`
+    );
+  }
+}
+
+export async function updateZohoTimer(
+  timerId: number,
+  payload: UpdateTimerPayload,
+  authToken: string
+): Promise<ZohoTimer> {
+  try {
+    const sanitisedPayload = Object.fromEntries(
+      Object.entries(payload).filter(([, value]) => value !== undefined)
+    );
+
+    const response = await fetch(`${WEBAPP_API_BASE_URL}/zoho_timers/${timerId}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${authToken}`,
+      },
+      body: JSON.stringify(sanitisedPayload),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new XanoTimerError(
+        errorText || `Failed to update timer (${response.status})`,
+        response.status
+      );
+    }
+
+    const data = await response.json();
+    return extractTimerFromResponse(data);
+  } catch (error) {
+    if (error instanceof XanoTimerError) {
+      throw error;
+    }
+    throw new XanoTimerError(
+      `Network error updating timer: ${error instanceof Error ? error.message : "Unknown error"}`
     );
   }
 }
