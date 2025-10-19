@@ -355,76 +355,9 @@ const createGroup = (index: number): TimerGroup => ({
   timers: [createTimer()],
 });
 
-const STORAGE_KEY = "multi-timer/state";
+const COMPACT_MODE_KEY = "multi-timer/compact-mode";
 const RUNNING_SESSION_KEY = "multi-timer/running";
 
-const normaliseTimer = (candidate: unknown): TimerData => {
-  if (!candidate || typeof candidate !== "object") {
-    return createTimer();
-  }
-
-  const value = candidate as Partial<TimerData> & Record<string, unknown>;
-
-  const rawTaskId = value.taskId as unknown;
-  let taskId: string | null = null;
-  if (typeof rawTaskId === "string" && rawTaskId.trim()) {
-    taskId = rawTaskId;
-  } else if (typeof rawTaskId === "number") {
-    taskId = rawTaskId.toString();
-  }
-
-  const rawBackendTimerId = value.backendTimerId as unknown;
-  let backendTimerId: number | null = null;
-  if (typeof rawBackendTimerId === "number") {
-    backendTimerId = rawBackendTimerId;
-  }
-
-  const rawLastActiveDate = value.lastActiveDate as unknown;
-  let lastActiveDate: string | null = null;
-  if (typeof rawLastActiveDate === "string" && rawLastActiveDate.trim()) {
-    lastActiveDate = rawLastActiveDate;
-  }
-
-  return {
-    id: typeof value.id === "string" && value.id.trim() ? value.id : createId(),
-    taskId,
-    taskName: typeof value.taskName === "string" ? value.taskName : "",
-    notes: typeof value.notes === "string" ? value.notes : "",
-    elapsed: 0, // Will be recalculated from events
-    backendTimerId,
-    lastActiveDate,
-  };
-};
-
-const normaliseGroup = (candidate: unknown, index: number): TimerGroup => {
-  if (!candidate || typeof candidate !== "object") {
-    return createGroup(index + 1);
-  }
-
-  const value = candidate as Partial<TimerGroup> & Record<string, unknown>;
-  const timersSource = Array.isArray(value.timers) ? value.timers : [];
-  const timers = timersSource
-    .map((timer) => normaliseTimer(timer))
-    .filter(Boolean);
-
-  const rawProjectId = value.projectId as unknown;
-  let projectId: string | null = null;
-  if (typeof rawProjectId === "string" && rawProjectId.trim()) {
-    projectId = rawProjectId;
-  } else if (typeof rawProjectId === "number") {
-    projectId = rawProjectId.toString();
-  }
-
-  return {
-    id: typeof value.id === "string" && value.id.trim() ? value.id : createId(),
-    projectId,
-    projectName:
-      typeof value.projectName === "string" && value.projectName.trim()
-        ? value.projectName
-        : `Project ${index + 1}`,
-    timers: timers.length ? timers : [createTimer()],
-  };
-};
 
 const normaliseProjects = (payload: unknown): ZohoProject[] => {
   if (!Array.isArray(payload)) {
@@ -602,92 +535,21 @@ export default function MultiTimer() {
     if (hasHydrated.current) return;
     hasHydrated.current = true;
 
-    let nextGroups: TimerGroup[] = [createGroup(1)];
     let nextIsCompact = false;
-    const nextTimeEvents: TimeEvent[] = [];
-    let nextRunningSession: RunningSession | null = null;
 
     try {
-      // Load groups and compact mode
-      const storedValue = window.localStorage.getItem(STORAGE_KEY);
-      if (storedValue) {
-        const parsed = JSON.parse(storedValue) as Partial<{
-          groups: unknown;
-          isCompact: unknown;
-        }>;
-
-        if (Array.isArray(parsed.groups)) {
-          const restoredGroups = parsed.groups
-            .map((group, index) => normaliseGroup(group, index))
-            .filter(Boolean);
-
-          if (restoredGroups.length) {
-            nextGroups = restoredGroups;
-          }
-        }
-
-        if (typeof parsed.isCompact === "boolean") {
-          nextIsCompact = parsed.isCompact;
-        }
-      }
-
-      // Load running session
-      const storedSession = window.sessionStorage.getItem(RUNNING_SESSION_KEY);
-      if (storedSession) {
-        const parsed = JSON.parse(storedSession) as RunningSession;
-        const owningGroup = nextGroups.find((group) =>
-          group.timers.some((timer) => timer.id === parsed.timerId)
-        );
-
-        if (owningGroup) {
-          const owningTimer = owningGroup.timers.find(
-            (timer) => timer.id === parsed.timerId
-          );
-
-          if (owningTimer) {
-            nextRunningSession = parsed;
-            nextTimeEvents.push({
-              id: parsed.eventId,
-              groupId: owningGroup.id,
-              timerId: owningTimer.id,
-              projectName: owningGroup.projectName,
-              taskName: owningTimer.taskName,
-              notes: owningTimer.notes,
-              startTime: parsed.startTime,
-              endTime: null,
-              backendIntervalId: owningTimer.backendTimerId ?? null,
-              activeDate:
-                owningTimer.lastActiveDate ??
-                formatDateForXano(new Date(parsed.startTime)),
-            });
-          } else {
-            window.sessionStorage.removeItem(RUNNING_SESSION_KEY);
-          }
-        } else {
-          window.sessionStorage.removeItem(RUNNING_SESSION_KEY);
-        }
+      // Load compact mode preference only
+      const storedCompactMode = window.localStorage.getItem(COMPACT_MODE_KEY);
+      if (storedCompactMode) {
+        nextIsCompact = storedCompactMode === "true";
       }
     } catch (error) {
-      console.error("Failed to load timers from storage", error);
+      console.error("Failed to load compact mode from storage", error);
     }
 
-    // Calculate elapsed times for all timers
-    nextGroups = nextGroups.map((group) => ({
-      ...group,
-      timers: group.timers.map((timer) => ({
-        ...timer,
-        elapsed: calculateElapsedFromEvents(
-          timer.id,
-          nextTimeEvents,
-          nextRunningSession
-        ),
-      })),
-    }));
-
-    setGroups(nextGroups);
     setIsCompact(nextIsCompact);
-    setTimeEvents(nextTimeEvents);
-    setRunningSession(nextRunningSession);
+    // Groups will be loaded from backend via the activeDate effect
+    // No need to initialize here
   }, []);
 
   useEffect(() => {
@@ -828,16 +690,15 @@ export default function MultiTimer() {
     });
   }, [tasks]);
 
-  // Persist groups and compact mode to localStorage
+  // Persist compact mode preference to localStorage
   useEffect(() => {
     if (!hasHydrated.current) return;
     try {
-      const payload = JSON.stringify({groups, isCompact});
-      window.localStorage.setItem(STORAGE_KEY, payload);
+      window.localStorage.setItem(COMPACT_MODE_KEY, isCompact.toString());
     } catch (error) {
-      console.error("Failed to persist timers", error);
+      console.error("Failed to persist compact mode", error);
     }
-  }, [groups, isCompact]);
+  }, [isCompact]);
 
   // Persist running session to sessionStorage
   useEffect(() => {
@@ -908,56 +769,40 @@ export default function MultiTimer() {
         if (isCancelled) return;
 
         // Build timer groups from backend data
-        // For each backend timer, check if we already have a matching group/timer
-        // If not, create them
-        setGroups((prevGroups) => {
-          const updatedGroups = [...prevGroups];
+        // Replace existing groups with backend data
+        const backendGroups: TimerGroup[] = [];
 
-          for (const backendTimer of backendTimers) {
-            // Find or create group for this project
-            let group = updatedGroups.find(
-              (g) => g.projectId === backendTimer.zoho_project_id
-            );
+        for (const backendTimer of backendTimers) {
+          // Find or create group for this project
+          let group = backendGroups.find(
+            (g) => g.projectId === backendTimer.zoho_project_id
+          );
 
-            if (!group) {
-              // Create new group
-              group = {
-                id: createId(),
-                projectId: backendTimer.zoho_project_id,
-                projectName: `Project ${backendTimer.zoho_project_id}`, // Will be updated by project sync
-                timers: [],
-              };
-              updatedGroups.push(group);
-            }
-
-            // Find or create timer for this task
-            let timer = group.timers.find(
-              (t) => t.taskId === backendTimer.zoho_task_id
-            );
-
-            if (!timer) {
-              // Create new timer
-              timer = {
-                id: createId(),
-                taskId: backendTimer.zoho_task_id,
-                taskName: `Task ${backendTimer.zoho_task_id}`, // Will be updated by task sync
-                notes: backendTimer.notes,
-                elapsed: backendTimer.total_duration,
-                backendTimerId: backendTimer.id,
-                lastActiveDate: backendTimer.active_date,
-              };
-              group.timers.push(timer);
-            } else {
-              // Update existing timer with backend data
-              timer.backendTimerId = backendTimer.id;
-              timer.lastActiveDate = backendTimer.active_date;
-              timer.elapsed = backendTimer.total_duration;
-              timer.notes = backendTimer.notes;
-            }
+          if (!group) {
+            group = {
+              id: createId(),
+              projectId: backendTimer.zoho_project_id,
+              projectName: `Project ${backendTimer.zoho_project_id}`, // Will be updated by project sync
+              timers: [],
+            };
+            backendGroups.push(group);
           }
 
-          return updatedGroups;
-        });
+          // Add timer to group
+          const timer: TimerData = {
+            id: createId(),
+            taskId: backendTimer.zoho_task_id,
+            taskName: `Task ${backendTimer.zoho_task_id}`, // Will be updated by task sync
+            notes: backendTimer.notes,
+            elapsed: backendTimer.total_duration,
+            backendTimerId: backendTimer.id,
+            lastActiveDate: backendTimer.active_date,
+          };
+
+          group.timers.push(timer);
+        }
+
+        setGroups(backendGroups);
       } catch (error) {
         if (!isCancelled) {
           console.error("Failed to fetch timers for date:", error);
@@ -1863,34 +1708,42 @@ export default function MultiTimer() {
       .padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   };
 
-  // Filter groups based on active date
-  // When viewing today: show all groups (including those without backend data)
-  // When viewing historical date: only show groups with timers that have backend data for that date
+  // Filter groups based on active date and ensure at least one group exists
   const displayGroups = useMemo(() => {
+    let filteredGroups: TimerGroup[];
+
     if (isViewingToday) {
       // Show all groups when viewing today
-      return groups;
+      filteredGroups = groups;
+    } else {
+      // For historical dates, only show groups with timers that have backend data
+      filteredGroups = groups
+        .map((group) => {
+          // Filter timers to only those with backend data matching the active date
+          const filteredTimers = group.timers.filter(
+            (timer) =>
+              timer.backendTimerId !== null &&
+              timer.lastActiveDate === activeDate
+          );
+
+          if (filteredTimers.length === 0) {
+            return null;
+          }
+
+          return {
+            ...group,
+            timers: filteredTimers,
+          };
+        })
+        .filter((group): group is TimerGroup => group !== null);
     }
 
-    // For historical dates, only show groups with timers that have backend data
-    return groups
-      .map((group) => {
-        // Filter timers to only those with backend data matching the active date
-        const filteredTimers = group.timers.filter(
-          (timer) =>
-            timer.backendTimerId !== null && timer.lastActiveDate === activeDate
-        );
+    // Ensure at least one group exists when viewing today
+    if (isViewingToday && filteredGroups.length === 0) {
+      return [createGroup(1)];
+    }
 
-        if (filteredTimers.length === 0) {
-          return null;
-        }
-
-        return {
-          ...group,
-          timers: filteredTimers,
-        };
-      })
-      .filter((group): group is TimerGroup => group !== null);
+    return filteredGroups;
   }, [groups, activeDate, isViewingToday]);
 
   // Calculate total daily time from displayed timers

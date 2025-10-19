@@ -302,7 +302,7 @@ Use this streamlined template for documenting each integration function:
 #### Function: Date Navigation and Historical Timer Viewing
 **Status:** ✅ Complete
 
-**Purpose:** Enable users to navigate between dates and view historical timer data from the backend, with automatic fetching and building of timer groups for any selected date.
+**Purpose:** Enable users to navigate between dates and view historical timer data from the backend, with backend as the single source of truth for timer groups.
 
 **API Endpoints:**
 - GET `/zoho_timers?user_id={id}&active_date={date}` - Fetch all timers for a specific date
@@ -311,28 +311,41 @@ Use this streamlined template for documenting each integration function:
 1. Added date state management with `activeDate` state tracking current viewing date and `isViewingToday` computed property
 2. Created date navigation UI component with left/right arrows, date picker input, and "Jump to today" button
 3. Implemented `useEffect` hook that fetches timers from backend whenever `activeDate` changes
-4. Built automatic timer group/card creation from backend data: finds or creates matching groups and timers based on project/task IDs
-5. Added filtering logic to show all cached groups when viewing today, but only backend-synced timers when viewing historical dates
+4. Built automatic timer group/card creation from backend data: creates groups and timers based on project/task IDs
+5. **Removed localStorage persistence of timer groups** - backend is single source of truth
 6. Updated total time display to show selected date instead of always "Today's Total"
 7. Added empty state message for historical dates with no timer data
+8. **Simplified state management**: Timer groups come entirely from backend, session-only groups allowed for temporary UI creation
 
 **Code Changes:**
 - `src/lib/xano-timers.ts` - Already had `getTimersForDate` function available
-- `src/components/MultiTimer.tsx:532-538` - Added `activeDate`, `isLoadingTimers`, `timersFetchError` state and `isViewingToday` computed property
-- `src/components/MultiTimer.tsx:857-980` - Added `useEffect` to fetch and build timer groups when date changes
-- `src/components/MultiTimer.tsx:1651-1673` - Added date navigation handlers (`handleDateChange`, `goToPreviousDay`, `goToNextDay`, `goToToday`)
-- `src/components/MultiTimer.tsx:1787-1812` - Added `displayGroups` computed property to filter timers based on active date
-- `src/components/MultiTimer.tsx:1825-1832` - Added `formatDateDisplay` helper and updated total summary to show active date
-- `src/components/MultiTimer.tsx:1843-1913` - Added date navigation UI component with arrows, date picker, and "Jump to today" button
-- `src/components/MultiTimer.tsx:1986-2014` - Added empty state message for historical dates with no timers
+- `src/components/MultiTimer.tsx:358-359` - Changed storage keys: removed `STORAGE_KEY`, added `COMPACT_MODE_KEY`
+- `src/components/MultiTimer.tsx:601-620` - Simplified hydration: only load compact mode preference, no group loading
+- `src/components/MultiTimer.tsx:760-768` - Persist only compact mode preference (not groups)
+- `src/components/MultiTimer.tsx:810-872` - Simplified fetch logic: replace groups entirely with backend data
+- `src/components/MultiTimer.tsx:1579-1673` - Date navigation handlers
+- `src/components/MultiTimer.tsx:1778-1814` - Added `displayGroups` with default group for empty today view
+- `src/components/MultiTimer.tsx:1830-1846` - Date display formatting
+- `src/components/MultiTimer.tsx:1852-1922` - Date navigation UI
+- `src/components/MultiTimer.tsx:1995-2023` - Empty state for historical dates
+
+**Backend-First Architecture:**
+- **Single Source of Truth**: Backend data completely replaces frontend state on fetch
+- **No localStorage for Groups**: Groups are not persisted, only compact mode preference
+- **Session-Only Groups**: Users can create groups/timers in UI (via "Add Project Group"/"Add Timer" buttons)
+- **Ephemeral UI State**: Session-created groups exist only in memory, lost on page refresh
+- **Running Session Restoration**: Active timer preserved in sessionStorage for continuity
 
 **Notes:**
-- When viewing today, all cached timer groups are visible (including those without backend data yet)
-- When viewing historical dates, only timers with `backendTimerId` and matching `lastActiveDate` are shown
-- Backend timers automatically create new frontend groups/timers if they don't exist yet
+- When viewing today, backend groups are shown (plus any session-created groups)
+- When viewing historical dates, only backend groups matching that date are shown
+- On page refresh, all groups come from backend GET request (no localStorage cache)
+- Users can create groups/timers in current session, but they disappear on refresh unless a timer is started (creates backend record)
+- Simplified architecture prevents duplication issues by having single source of truth
 - Project and task names initially show IDs but are updated by existing project/task sync effects
 - Date picker prevents selecting future dates (max is today)
 - Next day button is disabled when viewing today
+- Default empty group shown when viewing today with no backend data
 
 ---
 
