@@ -336,6 +336,42 @@ Use this streamlined template for documenting each integration function:
 
 ---
 
+#### Function: Notes Field Editing with Backend Sync
+**Status:** ✅ Complete
+
+**Purpose:** Enable real-time note editing with immediate backend synchronization via PATCH request, removing debounce delays and implementing form-like submit behavior on blur/Enter.
+
+**API Endpoints:**
+- PATCH `/zoho_timers/{id}` - Update timer notes field
+
+**Implementation:**
+1. Removed 1-second debounce delay from `handleNotesChange` function - now sends PATCH immediately on blur/Enter
+2. Converted `handleNotesChange` to async function with optimistic UI updates and error rollback
+3. Added local state management (`compactNotesValue`, `standardNotesValue`) to prevent race conditions during typing
+4. Implemented `isUserTypingRef` guard to prevent parent state from overwriting local state while user is actively editing
+5. Made Enter key submit (trigger blur) in both compact and non-compact modes instead of creating new lines
+6. Removed `latestNoteUpdateRef` and `noteUpdateTimeoutRef` complexity, simplified to direct async/await pattern
+
+**Code Changes:**
+- `src/components/MultiTimer.tsx:535-536` - Removed debounce-related refs (`latestNoteUpdateRef`, `noteUpdateTimeoutRef`)
+- `src/components/MultiTimer.tsx:541-552` - Removed cleanup effect for timeout refs
+- `src/components/MultiTimer.tsx:1626-1725` - Replaced entire `handleNotesChange` function: removed setTimeout logic, converted to async/await with immediate PATCH
+- `src/components/Timer.tsx:50-52` - Added `standardNotesValue` state and `isUserTypingRef` for typing guard
+- `src/components/Timer.tsx:54-60` - Updated sync effect to respect `isUserTypingRef` flag
+- `src/components/Timer.tsx:62-65` - Removed `compactNotesValue` from focus effect dependencies to prevent re-selection on keystroke
+- `src/components/Timer.tsx:210-223` - Updated compact mode textarea: removed `onChange` call to `onNotesChange`, added `isUserTypingRef` tracking, call parent only on blur
+- `src/components/Timer.tsx:375-396` - Updated non-compact mode textarea: added local state, `isUserTypingRef` tracking, blur-only submission, Enter key handling
+
+**Notes:**
+- Notes now submit immediately on blur or Enter keypress (no debounce delay)
+- Optimistic UI updates provide instant feedback while backend PATCH is in flight
+- On error, notes revert to previous value automatically
+- Shift+Enter is blocked in both modes to prevent multiline entries
+- `isUserTypingRef` guard prevents parent state updates from overwriting user input during active typing
+- Simplified codebase by removing ~150 lines of debounce/timeout management code
+
+---
+
 #### Function: [Function Name]
 **Status:** 🚧 In Progress | ✅ Complete | ❌ Blocked
 

@@ -1,6 +1,6 @@
 "use client";
 
-import {useState} from "react";
+import {useEffect, useRef, useState} from "react";
 
 interface TimerTaskOption {
   id: string;
@@ -45,6 +45,28 @@ export default function Timer({
   onOpenTimeHistory,
 }: TimerProps) {
   const [showMenu, setShowMenu] = useState(false);
+  const [isEditingCompactNote, setIsEditingCompactNote] = useState(false);
+  const [compactNotesValue, setCompactNotesValue] = useState(notes);
+  const [standardNotesValue, setStandardNotesValue] = useState(notes);
+  const compactNotesRef = useRef<HTMLTextAreaElement | null>(null);
+  const isUserTypingRef = useRef(false);
+
+  useEffect(() => {
+    // Don't sync from props if user is actively typing
+    if (!isEditingCompactNote && !isUserTypingRef.current) {
+      setCompactNotesValue(notes);
+      setStandardNotesValue(notes);
+    }
+  }, [notes, isEditingCompactNote]);
+
+  useEffect(() => {
+    if (isEditingCompactNote && compactNotesRef.current) {
+      compactNotesRef.current.focus();
+      if (compactNotesValue.trim() !== "") {
+        compactNotesRef.current.select();
+      }
+    }
+  }, [isEditingCompactNote]); // Remove compactNotesValue dependency to prevent re-selecting on every keystroke
 
   // Format elapsed time as HH:MM:SS
   const formatTime = (seconds: number): string => {
@@ -57,9 +79,6 @@ export default function Timer({
   };
 
   const formattedTime = formatTime(elapsed);
-  const hasNotes = notes.trim() !== "";
-  const notesLabel = hasNotes ? notes : "Add note";
-
   const hasMatchingTask =
     taskId !== null && taskOptions.some((option) => option.id === taskId);
   const taskSelectValue = hasMatchingTask ? taskId! : "";
@@ -102,6 +121,13 @@ export default function Timer({
     const borderColor = isActive
       ? "border-teal-400 ring-2 ring-teal-400/50"
       : "border-gray-200 dark:border-gray-700";
+    const compactNotesDisplay = isEditingCompactNote
+      ? compactNotesValue
+      : notes;
+    const compactHasNotes = compactNotesDisplay.trim() !== "";
+    const compactNotesLabel = compactHasNotes
+      ? compactNotesDisplay
+      : "Add note";
 
     return (
       <div
@@ -180,15 +206,52 @@ export default function Timer({
             {formattedTime}
           </span>
 
-          <div
-            className={`break-words text-sm font-medium ${
-              hasNotes
-                ? "text-gray-700 dark:text-gray-200"
-                : "text-gray-400 dark:text-gray-500"
-            }`}
-          >
-            {notesLabel}
-          </div>
+          {isEditingCompactNote ? (
+            <textarea
+              value={compactNotesValue}
+              onChange={(event) => {
+                const nextNotes = event.target.value;
+                isUserTypingRef.current = true;
+                setCompactNotesValue(nextNotes);
+              }}
+              onBlur={() => {
+                isUserTypingRef.current = false;
+                // Only trigger backend update when done editing
+                if (compactNotesValue !== notes) {
+                  onNotesChange(id, compactNotesValue);
+                }
+                // Exit edit mode after updating parent state
+                setIsEditingCompactNote(false);
+              }}
+              onClick={(event) => event.stopPropagation()}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  event.currentTarget.blur();
+                }
+              }}
+              autoFocus
+              rows={2}
+              placeholder="Add note"
+              ref={compactNotesRef}
+              className="w-full resize-none rounded-md border border-teal-400 bg-transparent px-3 py-2 text-sm text-gray-700 outline-none focus:ring-1 focus:ring-teal-400 dark:border-teal-400/70 dark:bg-transparent dark:text-gray-200"
+            />
+          ) : (
+            <div
+              onClick={(event) => {
+                event.stopPropagation();
+                setCompactNotesValue(notes);
+                setIsEditingCompactNote(true);
+              }}
+              className={`break-words text-sm font-medium ${
+                compactHasNotes
+                  ? "cursor-text text-gray-700 dark:text-gray-200"
+                  : "cursor-text text-gray-400 dark:text-gray-500"
+              }`}
+            >
+              {compactNotesLabel}
+            </div>
+          )}
         </div>
       </div>
     );
@@ -310,8 +373,23 @@ export default function Timer({
       </div>
 
       <textarea
-        value={notes}
-        onChange={(event) => onNotesChange(id, event.target.value)}
+        value={standardNotesValue}
+        onChange={(event) => {
+          isUserTypingRef.current = true;
+          setStandardNotesValue(event.target.value);
+        }}
+        onBlur={() => {
+          isUserTypingRef.current = false;
+          if (standardNotesValue !== notes) {
+            onNotesChange(id, standardNotesValue);
+          }
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && !event.shiftKey) {
+            event.preventDefault();
+            event.currentTarget.blur();
+          }
+        }}
         placeholder="Notes"
         rows={2}
         className="w-full flex-1 resize-none rounded-md border border-gray-200 bg-transparent px-3 py-2 text-sm text-gray-700 outline-none transition focus:border-teal-400 focus:ring-1 focus:ring-teal-400 dark:border-gray-700 dark:text-gray-200"

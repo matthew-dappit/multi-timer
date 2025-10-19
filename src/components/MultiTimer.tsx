@@ -11,6 +11,7 @@ import {
   getTodayDateString,
   resumeZohoTimer,
   startZohoTimer,
+  updateZohoTimer,
   stopZohoTimer,
   XanoTimerError,
   type CreateTimerPayload,
@@ -1622,11 +1623,17 @@ export default function MultiTimer() {
     );
   };
 
-  const handleNotesChange = (
+  const handleNotesChange = async (
     groupId: string,
     timerId: string,
     value: string
   ) => {
+    const group = groups.find((item) => item.id === groupId);
+    const timer = group?.timers.find((item) => item.id === timerId);
+    const backendTimerId = timer?.backendTimerId ?? null;
+    const previousNotes = timer?.notes ?? "";
+
+    // Optimistically update UI
     updateGroups((previous) =>
       previous.map((group) =>
         group.id === groupId
@@ -1639,6 +1646,82 @@ export default function MultiTimer() {
           : group
       )
     );
+
+    // If no backend timer or value unchanged, just update local state
+    if (!backendTimerId || value === previousNotes) {
+      return;
+    }
+
+    const authToken = authClient.getToken();
+    if (!authToken) {
+      return;
+    }
+
+    // Immediately send PATCH request to backend
+    try {
+      const backendTimer = await updateZohoTimer(
+        backendTimerId,
+        {
+          notes: value,
+        },
+        authToken
+      );
+
+      // Update with backend response
+      setGroups((prevGroups) =>
+        prevGroups.map((groupItem) => {
+          if (groupItem.id !== groupId) {
+            return groupItem;
+          }
+
+          return {
+            ...groupItem,
+            timers: groupItem.timers.map((timerItem) => {
+              if (timerItem.id !== timerId) {
+                return timerItem;
+              }
+
+              return {
+                ...timerItem,
+                notes: backendTimer.notes ?? value,
+                backendTimerId: backendTimer.id,
+                lastActiveDate:
+                  backendTimer.active_date ?? timerItem.lastActiveDate,
+                elapsed:
+                  typeof backendTimer.total_duration === "number"
+                    ? backendTimer.total_duration
+                    : timerItem.elapsed,
+              };
+            }),
+          };
+        })
+      );
+    } catch (error) {
+      console.error("Failed to update timer notes", error);
+
+      // Revert to previous notes on error
+      setGroups((prevGroups) =>
+        prevGroups.map((groupItem) => {
+          if (groupItem.id !== groupId) {
+            return groupItem;
+          }
+
+          return {
+            ...groupItem,
+            timers: groupItem.timers.map((timerItem) => {
+              if (timerItem.id !== timerId) {
+                return timerItem;
+              }
+
+              return {
+                ...timerItem,
+                notes: previousNotes,
+              };
+            }),
+          };
+        })
+      );
+    }
   };
 
   const addGroup = () => {
