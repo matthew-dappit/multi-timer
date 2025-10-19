@@ -466,6 +466,7 @@ export default function MultiTimer() {
   const [isLoadingTimers, setIsLoadingTimers] = useState(false);
   const [timersFetchError, setTimersFetchError] = useState<string | null>(null);
   const hasHydrated = useRef(false);
+  const runningTimerBaselineRef = useRef<number>(0);
 
   // Check if we're viewing today
   const isViewingToday = activeDate === getTodayDateString();
@@ -513,21 +514,22 @@ export default function MultiTimer() {
   const calculateElapsedFromEvents = (
     timerId: string,
     events: TimeEvent[],
-    session: RunningSession | null
+    session: RunningSession | null,
+    baselineElapsed: number = 0
   ): number => {
-    // Sum all completed events for this timer
+    // If timer is running, return baseline + running time only
+    if (session?.timerId === timerId) {
+      const runningTime = Date.now() - session.startTime;
+      return baselineElapsed + Math.floor(runningTime / 1000);
+    }
+
+    // If timer is stopped, sum completed events from this session only
     const completedTime = events
       .filter((e) => e.timerId === timerId && e.endTime !== null)
       .reduce((sum, e) => sum + (e.endTime! - e.startTime), 0);
 
-    // Add current running time if this timer is active
-    let runningTime = 0;
-    if (session?.timerId === timerId) {
-      runningTime = Date.now() - session.startTime;
-    }
-
-    // Convert ms to seconds
-    return Math.floor((completedTime + runningTime) / 1000);
+    // Return baseline + current session completed time
+    return baselineElapsed + Math.floor(completedTime / 1000);
   };
 
   // Load state from localStorage on mount (hydration)
@@ -536,20 +538,29 @@ export default function MultiTimer() {
     hasHydrated.current = true;
 
     let nextIsCompact = false;
+    let nextRunningSession: RunningSession | null = null;
 
     try {
-      // Load compact mode preference only
+      // Load compact mode preference
       const storedCompactMode = window.localStorage.getItem(COMPACT_MODE_KEY);
       if (storedCompactMode) {
         nextIsCompact = storedCompactMode === "true";
       }
+
+      // Load running session
+      const storedRunningSession = window.localStorage.getItem(RUNNING_SESSION_KEY);
+      if (storedRunningSession) {
+        nextRunningSession = JSON.parse(storedRunningSession);
+      }
     } catch (error) {
-      console.error("Failed to load compact mode from storage", error);
+      console.error("Failed to load state from storage", error);
     }
 
     setIsCompact(nextIsCompact);
+    if (nextRunningSession) {
+      setRunningSession(nextRunningSession);
+    }
     // Groups will be loaded from backend via the activeDate effect
-    // No need to initialize here
   }, []);
 
   useEffect(() => {
@@ -700,15 +711,15 @@ export default function MultiTimer() {
     }
   }, [isCompact]);
 
-  // Persist running session to sessionStorage
+  // Persist running session to localStorage
   useEffect(() => {
     if (!hasHydrated.current) return;
     try {
       if (runningSession) {
         const payload = JSON.stringify(runningSession);
-        window.sessionStorage.setItem(RUNNING_SESSION_KEY, payload);
+        window.localStorage.setItem(RUNNING_SESSION_KEY, payload);
       } else {
-        window.sessionStorage.removeItem(RUNNING_SESSION_KEY);
+        window.localStorage.removeItem(RUNNING_SESSION_KEY);
       }
     } catch (error) {
       console.error("Failed to persist running session", error);
@@ -725,14 +736,22 @@ export default function MultiTimer() {
         setGroups((prevGroups) =>
           prevGroups.map((group) => ({
             ...group,
-            timers: group.timers.map((timer) => ({
-              ...timer,
-              elapsed: calculateElapsedFromEvents(
-                timer.id,
-                currentEvents,
-                runningSession
-              ),
-            })),
+            timers: group.timers.map((timer) => {
+              // For running timer, calculate current session time + baseline
+              if (timer.id === runningSession.timerId) {
+                return {
+                  ...timer,
+                  elapsed: calculateElapsedFromEvents(
+                    timer.id,
+                    currentEvents,
+                    runningSession,
+                    runningTimerBaselineRef.current // Use stored baseline from when timer started
+                  ),
+                };
+              }
+              // For stopped timers, keep existing elapsed (don't recalculate)
+              return timer;
+            }),
           }))
         );
         return currentEvents; // Don't modify timeEvents
@@ -884,6 +903,9 @@ export default function MultiTimer() {
 
     setTimeEvents(updatedEvents);
 
+    // Calculate elapsed with baseline BEFORE clearing it
+    const baselineForCalculation = runningTimerBaselineRef.current;
+
     setGroups((prevGroups) =>
       prevGroups.map((groupItem) => {
         if (groupItem.id !== session.groupId) {
@@ -899,7 +921,8 @@ export default function MultiTimer() {
                   elapsed: calculateElapsedFromEvents(
                     timerItem.id,
                     updatedEvents,
-                    null
+                    null,
+                    baselineForCalculation // Use the baseline from when timer started
                   ),
                 }
               : timerItem
@@ -907,6 +930,9 @@ export default function MultiTimer() {
         };
       })
     );
+
+    // Clear baseline AFTER calculating elapsed
+    runningTimerBaselineRef.current = 0;
 
     if (!timer?.backendTimerId || !authToken) {
       return updatedEvents;
@@ -1025,6 +1051,9 @@ export default function MultiTimer() {
         startTime: startTimestamp,
       };
 
+      // Store baseline elapsed when timer starts
+      runningTimerBaselineRef.current = timer.elapsed;
+
       setRunningSession(newSession);
 
       setTimeEvents((prevEvents) => {
@@ -1042,7 +1071,8 @@ export default function MultiTimer() {
                           elapsed: calculateElapsedFromEvents(
                             timerItem.id,
                             nextEvents,
-                            newSession
+                            newSession,
+                            timerItem.elapsed // Preserve existing backend elapsed as baseline
                           ),
                         }
                       : timerItem
@@ -1112,7 +1142,8 @@ export default function MultiTimer() {
                               : calculateElapsedFromEvents(
                                   timerItem.id,
                                   nextEvents,
-                                  newSession
+                                  newSession,
+                                  timerItem.elapsed // Use existing elapsed as baseline if backend doesn't provide
                                 ),
                         }
                       : timerItem
@@ -1145,7 +1176,8 @@ export default function MultiTimer() {
                             elapsed: calculateElapsedFromEvents(
                               timerItem.id,
                               revertedEvents,
-                              null
+                              null,
+                              timerItem.elapsed // Preserve baseline when reverting
                             ),
                           }
                         : timerItem
@@ -1329,7 +1361,8 @@ export default function MultiTimer() {
                       elapsed: calculateElapsedFromEvents(
                         timerId,
                         updatedEvents,
-                        runningSession
+                        runningSession,
+                        t.elapsed // Preserve baseline for manual time entry
                       ),
                     }
                   : t
@@ -1378,7 +1411,8 @@ export default function MultiTimer() {
                         elapsed: calculateElapsedFromEvents(
                           timer.id,
                           updatedEvents,
-                          runningSession
+                          runningSession,
+                          timer.elapsed // Preserve baseline when editing time slot
                         ),
                       }
                     : timer
@@ -1435,7 +1469,8 @@ export default function MultiTimer() {
                       elapsed: calculateElapsedFromEvents(
                         timer.id,
                         updatedEvents,
-                        runningSession
+                        runningSession,
+                        timer.elapsed // Preserve baseline when deleting time slot
                       ),
                     }
                   : timer

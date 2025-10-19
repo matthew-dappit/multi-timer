@@ -75,11 +75,11 @@ This document tracks the iterative process of integrating the multi-timer applic
 
 #### Data Storage
 
-**localStorage Keys (2025-10-16 update):**
-- `'multi-timer/state'`: persisted timer groups plus compact mode preference.
-- `'multi-timer/running'`: mirrors the currently active session in `sessionStorage` for tab restoration.
+**localStorage Keys:**
+- `'multi-timer/compact-mode'`: UI compact mode preference only.
+- `'multi-timer/running'`: Currently active timer session (persists across page refreshes).
 - `'multi-timer-auth-token'` / `'multi-timer-user'`: authentication cache.
-- **Removed:** `'multi-timer/time-events'` is no longer written. Timer intervals are now fetched on demand, so history will refresh from Xano when needed instead of relying on localStorage.
+- **Removed:** `'multi-timer/state'` (timer groups) and `'multi-timer/time-events'` are no longer persisted. Backend is the single source of truth.
 
 **Data Structures:**
 
@@ -296,6 +296,9 @@ Use this streamlined template for documenting each integration function:
 - Start/resume requests now include the exact UI timestamp so optimistic updates match backend-calculated totals when the response arrives.
 - Backend responses return only the timer record; interval details are fetched separately when needed.
 - History views currently take a step back until the fetch-on-demand workflow is implemented (localStorage cache removed intentionally).
+- **Elapsed Calculation Fix**: `calculateElapsedFromEvents` now accepts a baseline parameter (backend's `total_duration`) and only adds current session time, preventing timer resets when resuming.
+- **Baseline Stability**: `runningTimerBaselineRef` stores the baseline when timer starts and remains constant throughout the session, preventing timer jumping during running and stopping phases.
+- **Stop Calculation Order**: Baseline is captured before clearing the ref, ensuring optimistic stop calculation shows correct total (baseline + session time) instead of only session time.
 
 ---
 
@@ -334,7 +337,7 @@ Use this streamlined template for documenting each integration function:
 - **No localStorage for Groups**: Groups are not persisted, only compact mode preference
 - **Session-Only Groups**: Users can create groups/timers in UI (via "Add Project Group"/"Add Timer" buttons)
 - **Ephemeral UI State**: Session-created groups exist only in memory, lost on page refresh
-- **Running Session Restoration**: Active timer preserved in sessionStorage for continuity
+- **Running Session Persistence**: Active timer preserved in localStorage for continuity across page refreshes
 
 **Notes:**
 - When viewing today, backend groups are shown (plus any session-created groups)
