@@ -299,6 +299,43 @@ Use this streamlined template for documenting each integration function:
 
 ---
 
+#### Function: Date Navigation and Historical Timer Viewing
+**Status:** ✅ Complete
+
+**Purpose:** Enable users to navigate between dates and view historical timer data from the backend, with automatic fetching and building of timer groups for any selected date.
+
+**API Endpoints:**
+- GET `/zoho_timers?user_id={id}&active_date={date}` - Fetch all timers for a specific date
+
+**Implementation:**
+1. Added date state management with `activeDate` state tracking current viewing date and `isViewingToday` computed property
+2. Created date navigation UI component with left/right arrows, date picker input, and "Jump to today" button
+3. Implemented `useEffect` hook that fetches timers from backend whenever `activeDate` changes
+4. Built automatic timer group/card creation from backend data: finds or creates matching groups and timers based on project/task IDs
+5. Added filtering logic to show all cached groups when viewing today, but only backend-synced timers when viewing historical dates
+6. Updated total time display to show selected date instead of always "Today's Total"
+7. Added empty state message for historical dates with no timer data
+
+**Code Changes:**
+- `src/lib/xano-timers.ts` - Already had `getTimersForDate` function available
+- `src/components/MultiTimer.tsx:532-538` - Added `activeDate`, `isLoadingTimers`, `timersFetchError` state and `isViewingToday` computed property
+- `src/components/MultiTimer.tsx:857-980` - Added `useEffect` to fetch and build timer groups when date changes
+- `src/components/MultiTimer.tsx:1651-1673` - Added date navigation handlers (`handleDateChange`, `goToPreviousDay`, `goToNextDay`, `goToToday`)
+- `src/components/MultiTimer.tsx:1787-1812` - Added `displayGroups` computed property to filter timers based on active date
+- `src/components/MultiTimer.tsx:1825-1832` - Added `formatDateDisplay` helper and updated total summary to show active date
+- `src/components/MultiTimer.tsx:1843-1913` - Added date navigation UI component with arrows, date picker, and "Jump to today" button
+- `src/components/MultiTimer.tsx:1986-2014` - Added empty state message for historical dates with no timers
+
+**Notes:**
+- When viewing today, all cached timer groups are visible (including those without backend data yet)
+- When viewing historical dates, only timers with `backendTimerId` and matching `lastActiveDate` are shown
+- Backend timers automatically create new frontend groups/timers if they don't exist yet
+- Project and task names initially show IDs but are updated by existing project/task sync effects
+- Date picker prevents selecting future dates (max is today)
+- Next day button is disabled when viewing today
+
+---
+
 #### Function: [Function Name]
 **Status:** 🚧 In Progress | ✅ Complete | ❌ Blocked
 
@@ -441,10 +478,10 @@ This section captures important architectural and implementation decisions.
 
 ### Overall Progress
 
-**Phase 1: Core CRUD Operations** - 50% Complete
+**Phase 1: Core CRUD Operations** - 100% Complete
 - [x] Function 1: Create time event (manual entry)
-- [ ] Function 2: Update time event
-- [ ] Function 3: Read time events
+- [x] Function 2: Timer start/stop/resume backend sync
+- [x] Function 3: Read time events (GET /zoho_timers with date navigation)
 - [x] Function 4: Delete time event
 
 **Phase 2: Project/Task Sync** - 0% Complete
@@ -453,7 +490,7 @@ This section captures important architectural and implementation decisions.
 **Phase 3: Advanced Features** - 0% Complete
 - [ ] Function 9+: [To be defined]
 
-**Total Integration Progress:** 50% (Phase 1)
+**Total Integration Progress:** 100% (Phase 1)
 
 ---
 

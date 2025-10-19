@@ -7,6 +7,8 @@ import {
   createZohoTimerInterval,
   deleteZohoTimerInterval,
   formatDateForXano,
+  getTimersForDate,
+  getTodayDateString,
   resumeZohoTimer,
   startZohoTimer,
   stopZohoTimer,
@@ -526,7 +528,13 @@ export default function MultiTimer() {
   const [apiError, setApiError] = useState<string | null>(null);
   const [timerSyncError, setTimerSyncError] = useState<string | null>(null);
   const [isTimerSyncing, setIsTimerSyncing] = useState(false);
+  const [activeDate, setActiveDate] = useState<string>(getTodayDateString());
+  const [isLoadingTimers, setIsLoadingTimers] = useState(false);
+  const [timersFetchError, setTimersFetchError] = useState<string | null>(null);
   const hasHydrated = useRef(false);
+
+  // Check if we're viewing today
+  const isViewingToday = activeDate === getTodayDateString();
 
   const tasksByProject = useMemo(() => {
     const map = new Map<string, ZohoTask[]>();
@@ -871,6 +879,106 @@ export default function MultiTimer() {
 
     return () => clearInterval(interval);
   }, [runningSession]);
+
+  // Fetch timers when active date changes
+  useEffect(() => {
+    if (!hasHydrated.current) return;
+
+    const user = authClient.getUser();
+    const authToken = authClient.getToken();
+
+    if (!user || !authToken) {
+      return;
+    }
+
+    let isCancelled = false;
+
+    const fetchTimersForDate = async () => {
+      setIsLoadingTimers(true);
+      setTimersFetchError(null);
+
+      try {
+        const backendTimers = await getTimersForDate(
+          user.id,
+          activeDate,
+          authToken
+        );
+
+        if (isCancelled) return;
+
+        // Build timer groups from backend data
+        // For each backend timer, check if we already have a matching group/timer
+        // If not, create them
+        setGroups((prevGroups) => {
+          const updatedGroups = [...prevGroups];
+
+          for (const backendTimer of backendTimers) {
+            // Find or create group for this project
+            let group = updatedGroups.find(
+              (g) => g.projectId === backendTimer.zoho_project_id
+            );
+
+            if (!group) {
+              // Create new group
+              group = {
+                id: createId(),
+                projectId: backendTimer.zoho_project_id,
+                projectName: `Project ${backendTimer.zoho_project_id}`, // Will be updated by project sync
+                timers: [],
+              };
+              updatedGroups.push(group);
+            }
+
+            // Find or create timer for this task
+            let timer = group.timers.find(
+              (t) => t.taskId === backendTimer.zoho_task_id
+            );
+
+            if (!timer) {
+              // Create new timer
+              timer = {
+                id: createId(),
+                taskId: backendTimer.zoho_task_id,
+                taskName: `Task ${backendTimer.zoho_task_id}`, // Will be updated by task sync
+                notes: backendTimer.notes,
+                elapsed: backendTimer.total_duration,
+                backendTimerId: backendTimer.id,
+                lastActiveDate: backendTimer.active_date,
+              };
+              group.timers.push(timer);
+            } else {
+              // Update existing timer with backend data
+              timer.backendTimerId = backendTimer.id;
+              timer.lastActiveDate = backendTimer.active_date;
+              timer.elapsed = backendTimer.total_duration;
+              timer.notes = backendTimer.notes;
+            }
+          }
+
+          return updatedGroups;
+        });
+      } catch (error) {
+        if (!isCancelled) {
+          console.error("Failed to fetch timers for date:", error);
+          if (error instanceof XanoTimerError) {
+            setTimersFetchError(error.message);
+          } else {
+            setTimersFetchError("Failed to load timers for this date.");
+          }
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsLoadingTimers(false);
+        }
+      }
+    };
+
+    fetchTimersForDate();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [activeDate]);
 
   const updateGroups = (updater: (groups: TimerGroup[]) => TimerGroup[]) => {
     setGroups((previous) => updater(previous));
@@ -1638,6 +1746,31 @@ export default function MultiTimer() {
     }));
   };
 
+  // Date navigation handlers
+  const handleDateChange = (newDate: string) => {
+    setActiveDate(newDate);
+  };
+
+  const goToPreviousDay = () => {
+    const currentDate = new Date(activeDate);
+    currentDate.setDate(currentDate.getDate() - 1);
+    setActiveDate(formatDateForXano(currentDate));
+  };
+
+  const goToNextDay = () => {
+    const currentDate = new Date(activeDate);
+    currentDate.setDate(currentDate.getDate() + 1);
+    const nextDate = formatDateForXano(currentDate);
+    // Don't allow going beyond today
+    if (nextDate <= getTodayDateString()) {
+      setActiveDate(nextDate);
+    }
+  };
+
+  const goToToday = () => {
+    setActiveDate(getTodayDateString());
+  };
+
   const formatTime = (seconds: number): string => {
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
@@ -1647,8 +1780,38 @@ export default function MultiTimer() {
       .padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   };
 
-  // Calculate total daily time from all timers
-  const totalDailyTime = groups.reduce((total, group) => {
+  // Filter groups based on active date
+  // When viewing today: show all groups (including those without backend data)
+  // When viewing historical date: only show groups with timers that have backend data for that date
+  const displayGroups = useMemo(() => {
+    if (isViewingToday) {
+      // Show all groups when viewing today
+      return groups;
+    }
+
+    // For historical dates, only show groups with timers that have backend data
+    return groups
+      .map((group) => {
+        // Filter timers to only those with backend data matching the active date
+        const filteredTimers = group.timers.filter(
+          (timer) =>
+            timer.backendTimerId !== null && timer.lastActiveDate === activeDate
+        );
+
+        if (filteredTimers.length === 0) {
+          return null;
+        }
+
+        return {
+          ...group,
+          timers: filteredTimers,
+        };
+      })
+      .filter((group): group is TimerGroup => group !== null);
+  }, [groups, activeDate, isViewingToday]);
+
+  // Calculate total daily time from displayed timers
+  const totalDailyTime = displayGroups.reduce((total, group) => {
     return (
       total +
       group.timers.reduce((groupTotal, timer) => groupTotal + timer.elapsed, 0)
@@ -1656,13 +1819,27 @@ export default function MultiTimer() {
   }, 0);
 
   const containerGap = isCompact ? "gap-4" : "gap-8";
+
+  // Format the active date for display
+  const formatDateDisplay = (dateStr: string): string => {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString("en-US", {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  };
+
   const totalSummary = isCompact ? (
     <div className="rounded-2xl bg-gray-900 p-4 text-center font-mono text-4xl font-light text-white shadow-sm dark:bg-dappit-black">
       {formatTime(totalDailyTime)}
     </div>
   ) : (
     <div className="rounded-2xl bg-gray-900 p-6 text-center text-white shadow-lg dark:bg-dappit-black">
-      <h2 className="text-lg font-medium">Today&apos;s Total</h2>
+      <h2 className="text-lg font-medium">
+        {isViewingToday ? "Today's Total" : formatDateDisplay(activeDate)}
+      </h2>
       <div className="mt-3 font-mono text-5xl font-light">
         {formatTime(totalDailyTime)}
       </div>
@@ -1680,8 +1857,86 @@ export default function MultiTimer() {
     <div className={`flex h-full w-full flex-col ${containerGap}`}>
       {totalSummary}
 
+      {/* Date Navigation */}
+      <div className="flex items-center justify-center gap-3">
+        <button
+          onClick={goToPreviousDay}
+          className="rounded-lg border border-gray-300 p-2 transition hover:border-teal-400 hover:bg-teal-50 dark:border-gray-700 dark:hover:border-teal-400 dark:hover:bg-teal-500/10 cursor-pointer"
+          title="Previous day"
+        >
+          <svg
+            className="h-5 w-5 text-gray-600 dark:text-gray-300"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M15 19l-7-7 7-7"
+            />
+          </svg>
+        </button>
+
+        <div className="flex flex-col items-center min-w-[200px]">
+          <input
+            type="date"
+            value={activeDate}
+            onChange={(e) => handleDateChange(e.target.value)}
+            max={getTodayDateString()}
+            className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-center text-sm font-semibold text-gray-900 outline-none transition focus:border-teal-400 focus:ring-2 focus:ring-teal-400/20 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 cursor-pointer"
+          />
+          {!isViewingToday && (
+            <button
+              onClick={goToToday}
+              className="mt-1 text-xs text-teal-600 hover:text-teal-700 dark:text-teal-400 dark:hover:text-teal-300 cursor-pointer"
+            >
+              Jump to today
+            </button>
+          )}
+        </div>
+
+        <button
+          onClick={goToNextDay}
+          disabled={isViewingToday}
+          className={`rounded-lg border border-gray-300 p-2 transition cursor-pointer ${
+            isViewingToday
+              ? "opacity-30 cursor-not-allowed"
+              : "hover:border-teal-400 hover:bg-teal-50 dark:border-gray-700 dark:hover:border-teal-400 dark:hover:bg-teal-500/10"
+          }`}
+          title="Next day"
+        >
+          <svg
+            className="h-5 w-5 text-gray-600 dark:text-gray-300"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M9 5l7 7-7 7"
+            />
+          </svg>
+        </button>
+      </div>
+
+      {isLoadingTimers && (
+        <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-700 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-200">
+          Loading timers for {activeDate}...
+        </div>
+      )}
+
+      {timersFetchError && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
+          {timersFetchError}
+        </div>
+      )}
+
       {timerSyncError && (
-        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
+        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
           {timerSyncError}
         </div>
       )}
@@ -1727,8 +1982,39 @@ export default function MultiTimer() {
         </div>
       </div>
 
+      {displayGroups.length === 0 && !isViewingToday && !isLoadingTimers ? (
+        <div className="rounded-2xl border border-gray-200 bg-white p-12 text-center shadow-sm dark:border-gray-700 dark:bg-gray-900">
+          <svg
+            className="mx-auto h-16 w-16 text-gray-400 dark:text-gray-600"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+            />
+          </svg>
+          <h3 className="mt-4 text-lg font-semibold text-gray-900 dark:text-gray-100">
+            No timers for this date
+          </h3>
+          <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+            There are no tracked timers for {formatDateDisplay(activeDate)}.
+          </p>
+          <button
+            onClick={goToToday}
+            className="mt-4 rounded-md bg-teal-400 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-500 cursor-pointer"
+            style={{backgroundColor: "#01D9B5"}}
+          >
+            Go to Today
+          </button>
+        </div>
+      ) : null}
+
       <div className={gridClasses}>
-        {groups.map((group) => {
+        {displayGroups.map((group) => {
           const matchedProject =
             group.projectId !== null
               ? projects.find((project) => project.id === group.projectId)
