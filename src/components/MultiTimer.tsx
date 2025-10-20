@@ -357,7 +357,7 @@ const createGroup = (index: number): TimerGroup => ({
 
 const COMPACT_MODE_KEY = "multi-timer/compact-mode";
 const RUNNING_SESSION_KEY = "multi-timer/running";
-
+const DRAFT_TIMERS_KEY = "multi-timer/draft-timers";
 
 const normaliseProjects = (payload: unknown): ZohoProject[] => {
   if (!Array.isArray(payload)) {
@@ -539,6 +539,7 @@ export default function MultiTimer() {
 
     let nextIsCompact = false;
     let nextRunningSession: RunningSession | null = null;
+    let nextDraftGroups: TimerGroup[] = [];
 
     try {
       // Load compact mode preference
@@ -548,9 +549,16 @@ export default function MultiTimer() {
       }
 
       // Load running session
-      const storedRunningSession = window.localStorage.getItem(RUNNING_SESSION_KEY);
+      const storedRunningSession =
+        window.localStorage.getItem(RUNNING_SESSION_KEY);
       if (storedRunningSession) {
         nextRunningSession = JSON.parse(storedRunningSession);
+      }
+
+      // Load draft timers (only used when viewing today)
+      const storedDraftTimers = window.localStorage.getItem(DRAFT_TIMERS_KEY);
+      if (storedDraftTimers) {
+        nextDraftGroups = JSON.parse(storedDraftTimers);
       }
     } catch (error) {
       console.error("Failed to load state from storage", error);
@@ -559,6 +567,10 @@ export default function MultiTimer() {
     setIsCompact(nextIsCompact);
     if (nextRunningSession) {
       setRunningSession(nextRunningSession);
+    }
+    // Set draft groups initially - they will be merged with backend data when viewing today
+    if (nextDraftGroups.length > 0) {
+      setGroups(nextDraftGroups);
     }
     // Groups will be loaded from backend via the activeDate effect
   }, []);
@@ -726,6 +738,36 @@ export default function MultiTimer() {
     }
   }, [runningSession]);
 
+  // Helper function to save draft timers to localStorage
+  // Only called when user explicitly creates/modifies draft timers
+  const saveDraftTimersToLocalStorage = (currentGroups: TimerGroup[]) => {
+    try {
+      // Extract draft groups (groups with at least one timer without backendTimerId)
+      const draftGroups = currentGroups
+        .map((group) => {
+          const draftTimers = group.timers.filter((t) => !t.backendTimerId);
+          if (draftTimers.length === 0) return null;
+
+          return {
+            ...group,
+            timers: draftTimers,
+          };
+        })
+        .filter((g): g is TimerGroup => g !== null);
+
+      if (draftGroups.length > 0) {
+        const payload = JSON.stringify(draftGroups);
+        window.localStorage.setItem(DRAFT_TIMERS_KEY, payload);
+      } else {
+        // Clear localStorage when no draft timers exist
+        // This removes drafts that have been started (now have backendTimerId)
+        window.localStorage.removeItem(DRAFT_TIMERS_KEY);
+      }
+    } catch (error) {
+      console.error("Failed to persist draft timers", error);
+    }
+  };
+
   // Real-time update: recalculate elapsed time every second
   useEffect(() => {
     if (!runningSession) return;
@@ -788,7 +830,7 @@ export default function MultiTimer() {
         if (isCancelled) return;
 
         // Build timer groups from backend data
-        // Replace existing groups with backend data
+        // Backend is source of truth, but preserve draft timers when viewing today
         const backendGroups: TimerGroup[] = [];
 
         for (const backendTimer of backendTimers) {
@@ -821,6 +863,50 @@ export default function MultiTimer() {
           group.timers.push(timer);
         }
 
+        // If viewing today, load and merge draft timers from localStorage
+        // This allows users to select project/task before starting the timer
+        if (isViewingToday) {
+          try {
+            const storedDraftTimers =
+              window.localStorage.getItem(DRAFT_TIMERS_KEY);
+            if (storedDraftTimers) {
+              const draftGroups: TimerGroup[] = JSON.parse(storedDraftTimers);
+
+              for (const draftGroup of draftGroups) {
+                // Only process groups with draft timers (no backendTimerId)
+                const draftTimers = draftGroup.timers.filter(
+                  (t) => !t.backendTimerId
+                );
+
+                if (draftTimers.length === 0) {
+                  continue;
+                }
+
+                // Find if we already have a group for this project in backendGroups
+                const existingGroup = backendGroups.find(
+                  (g) => g.projectId === draftGroup.projectId
+                );
+
+                if (existingGroup) {
+                  // Add draft timers to existing group
+                  existingGroup.timers.push(...draftTimers);
+                } else {
+                  // Add the entire group with draft timers
+                  backendGroups.push({
+                    ...draftGroup,
+                    timers: draftTimers,
+                  });
+                }
+              }
+            }
+          } catch (error) {
+            console.error(
+              "Failed to load draft timers from localStorage",
+              error
+            );
+          }
+        }
+
         setGroups(backendGroups);
       } catch (error) {
         if (!isCancelled) {
@@ -843,7 +929,7 @@ export default function MultiTimer() {
     return () => {
       isCancelled = true;
     };
-  }, [activeDate]);
+  }, [activeDate, isViewingToday]);
 
   const updateGroups = (updater: (groups: TimerGroup[]) => TimerGroup[]) => {
     setGroups((previous) => updater(previous));
@@ -1016,6 +1102,19 @@ export default function MultiTimer() {
       return;
     }
 
+    // Validate that project and task are selected
+    if (!group.projectId || !timer.taskId) {
+      const missingFields = [];
+      if (!group.projectId) missingFields.push("project");
+      if (!timer.taskId) missingFields.push("task");
+      setTimerSyncError(
+        `Please select a ${missingFields.join(
+          " and "
+        )} before starting the timer.`
+      );
+      return;
+    }
+
     setIsTimerSyncing(true);
     setTimerSyncError(null);
 
@@ -1125,8 +1224,8 @@ export default function MultiTimer() {
             : event
         );
 
-        setGroups((prevGroups) =>
-          prevGroups.map((groupItem) =>
+        setGroups((prevGroups) => {
+          const updated = prevGroups.map((groupItem) =>
             groupItem.id === groupId
               ? {
                   ...groupItem,
@@ -1150,8 +1249,13 @@ export default function MultiTimer() {
                   ),
                 }
               : groupItem
-          )
-        );
+          );
+
+          // Timer now has backendTimerId, update draft timers in localStorage
+          saveDraftTimersToLocalStorage(updated);
+
+          return updated;
+        });
 
         return nextEvents;
       });
@@ -1487,8 +1591,8 @@ export default function MultiTimer() {
     taskId: string | null,
     taskName: string
   ) => {
-    updateGroups((previous) =>
-      previous.map((group) => {
+    updateGroups((previous) => {
+      const updated = previous.map((group) => {
         if (group.id !== groupId) {
           return group;
         }
@@ -1499,8 +1603,15 @@ export default function MultiTimer() {
             timer.id === timerId ? {...timer, taskId, taskName} : timer
           ),
         };
-      })
-    );
+      });
+
+      // Save draft timers after task selection (only when viewing today)
+      if (isViewingToday) {
+        saveDraftTimersToLocalStorage(updated);
+      }
+
+      return updated;
+    });
   };
 
   const handleNotesChange = async (
@@ -1514,8 +1625,8 @@ export default function MultiTimer() {
     const previousNotes = timer?.notes ?? "";
 
     // Optimistically update UI
-    updateGroups((previous) =>
-      previous.map((group) =>
+    updateGroups((previous) => {
+      const updated = previous.map((group) =>
         group.id === groupId
           ? {
               ...group,
@@ -1524,8 +1635,15 @@ export default function MultiTimer() {
               ),
             }
           : group
-      )
-    );
+      );
+
+      // Save draft timers after notes change (only when viewing today and timer is a draft)
+      if (isViewingToday && !backendTimerId) {
+        saveDraftTimersToLocalStorage(updated);
+      }
+
+      return updated;
+    });
 
     // If no backend timer or value unchanged, just update local state
     if (!backendTimerId || value === previousNotes) {
@@ -1605,7 +1723,16 @@ export default function MultiTimer() {
   };
 
   const addGroup = () => {
-    updateGroups((previous) => [...previous, createGroup(previous.length + 1)]);
+    updateGroups((previous) => {
+      const updated = [...previous, createGroup(previous.length + 1)];
+
+      // Save draft timers after adding group (only when viewing today)
+      if (isViewingToday) {
+        saveDraftTimersToLocalStorage(updated);
+      }
+
+      return updated;
+    });
   };
 
   const removeGroup = (groupId: string) => {
@@ -1618,7 +1745,17 @@ export default function MultiTimer() {
       handleTimerStop();
     }
 
-    setGroups((previous) => previous.filter((group) => group.id !== groupId));
+    updateGroups((previous) => {
+      const updated = previous.filter((group) => group.id !== groupId);
+
+      // Save draft timers after removing group (only when viewing today)
+      if (isViewingToday) {
+        saveDraftTimersToLocalStorage(updated);
+      }
+
+      return updated;
+    });
+
     setProjectSearchTerms((previous) => {
       if (!(groupId in previous)) {
         return previous;
@@ -1630,13 +1767,20 @@ export default function MultiTimer() {
   };
 
   const addTimerToGroup = (groupId: string) => {
-    updateGroups((previous) =>
-      previous.map((group) =>
+    updateGroups((previous) => {
+      const updated = previous.map((group) =>
         group.id === groupId
           ? {...group, timers: [...group.timers, createTimer()]}
           : group
-      )
-    );
+      );
+
+      // Save draft timers after adding timer (only when viewing today)
+      if (isViewingToday) {
+        saveDraftTimersToLocalStorage(updated);
+      }
+
+      return updated;
+    });
   };
 
   const removeTimerFromGroup = (groupId: string, timerId: string) => {
@@ -1645,8 +1789,8 @@ export default function MultiTimer() {
       handleTimerStop();
     }
 
-    updateGroups((previous) =>
-      previous.map((group) =>
+    updateGroups((previous) => {
+      const updated = previous.map((group) =>
         group.id === groupId
           ? {
               ...group,
@@ -1656,8 +1800,15 @@ export default function MultiTimer() {
                   : group.timers,
             }
           : group
-      )
-    );
+      );
+
+      // Save draft timers after deletion (only when viewing today)
+      if (isViewingToday) {
+        saveDraftTimersToLocalStorage(updated);
+      }
+
+      return updated;
+    });
   };
 
   const handleProjectSelect = (groupId: string, projectId: string | null) => {
@@ -1666,8 +1817,8 @@ export default function MultiTimer() {
       : null;
     const nextProjectName = selectedProject?.name ?? "";
 
-    updateGroups((previous) =>
-      previous.map((group) => {
+    updateGroups((previous) => {
+      const updated = previous.map((group) => {
         if (group.id !== groupId) {
           return group;
         }
@@ -1691,8 +1842,15 @@ export default function MultiTimer() {
               }))
             : group.timers,
         };
-      })
-    );
+      });
+
+      // Save draft timers after project selection (only when viewing today)
+      if (isViewingToday) {
+        saveDraftTimersToLocalStorage(updated);
+      }
+
+      return updated;
+    });
 
     setProjectSearchTerms((previous) => {
       if (previous[groupId] === "") {

@@ -78,6 +78,7 @@ This document tracks the iterative process of integrating the multi-timer applic
 **localStorage Keys:**
 - `'multi-timer/compact-mode'`: UI compact mode preference only.
 - `'multi-timer/running'`: Currently active timer session (persists across page refreshes).
+- `'multi-timer/draft-timers'`: Draft timer groups (timers without `backendTimerId`) when viewing today's date. Allows users to select project/task before starting a timer. Cleared when navigating to past dates.
 - `'multi-timer-auth-token'` / `'multi-timer-user'`: authentication cache.
 - **Removed:** `'multi-timer/state'` (timer groups) and `'multi-timer/time-events'` are no longer persisted. Backend is the single source of truth.
 
@@ -334,21 +335,39 @@ Use this streamlined template for documenting each integration function:
 
 **Backend-First Architecture:**
 - **Single Source of Truth**: Backend data completely replaces frontend state on fetch
-- **No localStorage for Groups**: Groups are not persisted, only compact mode preference
-- **Session-Only Groups**: Users can create groups/timers in UI (via "Add Project Group"/"Add Timer" buttons)
-- **Ephemeral UI State**: Session-created groups exist only in memory, lost on page refresh
+- **Draft Timer Persistence**: Draft timers (without `backendTimerId`) are persisted to localStorage when viewing today
+- **Date-Specific Behavior**:
+  - **Today's Date**: Backend timers + draft timers from localStorage are merged
+  - **Historical Dates**: Only backend timers are shown (no draft timers)
 - **Running Session Persistence**: Active timer preserved in localStorage for continuity across page refreshes
 
+**Draft Timer Workflow:**
+1. User selects project/task on today's date → Creates draft timer (no `backendTimerId`)
+2. Draft timer is automatically saved to `'multi-timer/draft-timers'` localStorage key (via useEffect)
+3. When navigating to past dates → Draft timers are NOT shown (only backend data), but remain in localStorage
+4. When navigating back to today → Draft timers are loaded from localStorage and merged with backend data
+5. On page refresh → Draft timers are loaded from localStorage during hydration and merged with backend data
+6. When user starts the timer → Backend timer is created, draft gets `backendTimerId` and is no longer saved to localStorage
+
+**Implementation Details:**
+- **Hydration Effect** (lines 536-576): Loads draft timers from localStorage on initial page load
+- **Save Helper** (lines 741-769): `saveDraftTimersToLocalStorage()` filters timers without `backendTimerId` and saves to localStorage, clears localStorage when no drafts exist
+- **Fetch Effect** (lines 806-928): Loads backend timers and merges with draft timers from localStorage when viewing today
+- Draft timers are identified by the absence of `backendTimerId` property
+- When viewing historical dates, explicit save calls do not run (no localStorage updates)
+- When viewing today, the fetch effect reads from localStorage to restore draft timers
+
 **Notes:**
-- When viewing today, backend groups are shown (plus any session-created groups)
-- When viewing historical dates, only backend groups matching that date are shown
-- On page refresh, all groups come from backend GET request (no localStorage cache)
-- Users can create groups/timers in current session, but they disappear on refresh unless a timer is started (creates backend record)
-- Simplified architecture prevents duplication issues by having single source of truth
+- When viewing today, backend groups are shown plus any draft groups from localStorage
+- When viewing historical dates, only backend groups matching that date are shown (draft timers ignored but preserved in localStorage)
+- Draft timers allow users to select project/task before starting, and selections persist across page refreshes and date navigation
+- Once a timer is started, it gets a `backendTimerId` and is no longer considered a draft (removed from localStorage)
+- localStorage is only updated when viewing today, preventing stale data from historical date views
+- Simplified architecture prevents duplication issues by having backend as single source of truth for started timers
 - Project and task names initially show IDs but are updated by existing project/task sync effects
 - Date picker prevents selecting future dates (max is today)
 - Next day button is disabled when viewing today
-- Default empty group shown when viewing today with no backend data
+- Default empty group shown when viewing today with no backend data and no draft timers
 
 ---
 
@@ -388,26 +407,68 @@ Use this streamlined template for documenting each integration function:
 
 ---
 
-#### Function: [Function Name]
-**Status:** 🚧 In Progress | ✅ Complete | ❌ Blocked
+#### Function: Draft Timer Persistence Architecture Redesign
+**Status:** ✅ Complete
 
-**Purpose:** [One-line description of what this function does]
+**Purpose:** Redesign draft timer persistence to prevent localStorage clearing during navigation and ensure draft timers persist across all date changes
 
-**API Endpoints:**
-- [METHOD] `/endpoint` - [Description]
+**Problem:**
+The original architecture used an automatic save effect that synced localStorage with current state on every `groups` change. This caused localStorage to be cleared when navigating between dates because:
+1. When navigating to previous dates, `groups` contained only backend timers (no drafts), so the effect cleared localStorage
+2. When navigating to today, the save effect ran before the fetch effect completed, operating on stale data and clearing localStorage
+3. The automatic sync approach violated the principle that localStorage should be the persistent source of truth for draft timers
 
-**Implementation:**
-1. [Key implementation step]
-2. [Key implementation step]
-3. [Key implementation step]
+**Solution:**
+Completely redesigned draft timer persistence from reactive (automatic sync) to imperative (explicit save on user actions):
+
+1. **Removed automatic save effect** (previously lines 741-770) that synced localStorage with state on every change
+2. **Created explicit save function** `saveDraftTimersToLocalStorage()` that:
+   - Extracts draft timers (timers without `backendTimerId`)
+   - Saves to localStorage only if draft timers exist
+   - **Never clears localStorage** when no draft timers are found (preserves existing drafts during navigation)
+3. **Added explicit save calls** in user action handlers:
+   - `handleProjectSelect()` - Saves when user selects/changes project
+   - `handleTaskChange()` - Saves when user selects/changes task
+   - `handleNotesChange()` - Saves when user edits notes on draft timer
+   - `addGroup()` - Saves when user adds new group
+   - `addTimerToGroup()` - Saves when user adds new timer
+   - `removeGroup()` - Saves when user deletes a group
+   - `removeTimerFromGroup()` - Saves when user deletes a timer
+   - Timer start handler - Removes timer from drafts when it gets `backendTimerId`
 
 **Code Changes:**
-- `path/to/file1.ts` - [Brief description]
-- `path/to/file2.ts` - [Brief description]
+- `src/components/MultiTimer.tsx:741-769` - Replaced automatic save effect with explicit `saveDraftTimersToLocalStorage()` helper function that clears localStorage when no drafts exist
+- `src/components/MultiTimer.tsx:1587-1613` - Updated `handleTaskChange()` to call save function after state update
+- `src/components/MultiTimer.tsx:1615-1644` - Updated `handleNotesChange()` to call save function after notes update for draft timers
+- `src/components/MultiTimer.tsx:1738-1767` - Updated `removeGroup()` to call save function after group deletion
+- `src/components/MultiTimer.tsx:1774-1800` - Updated `removeTimerFromGroup()` to call save function after timer deletion
+- `src/components/MultiTimer.tsx:1711-1721` - Updated `addGroup()` to call save function after state update
+- `src/components/MultiTimer.tsx:1769-1777` - Updated `addTimerToGroup()` to call save function after state update
+- `src/components/MultiTimer.tsx:1802-1835` - Updated `handleProjectSelect()` to call save function after state update
+- `src/components/MultiTimer.tsx:1225-1256` - Updated timer start handler to call save function when timer gets `backendTimerId` (which removes it from localStorage)
+
+**Architecture Principles:**
+1. **localStorage as persistent store**: Draft timers in localStorage are preserved during navigation
+2. **Explicit save operations**: Draft timers are only saved when user explicitly creates/modifies them
+3. **Draft cleanup**: Draft timers are automatically removed from localStorage when they get a `backendTimerId` (user starts timer) or when all drafts are deleted
+4. **Read-only during navigation**: Fetch effect reads and merges draft timers, but never modifies localStorage
+5. **Conditional saves**: Save operations only run when viewing today (`isViewingToday` check)
+
+**Behavior:**
+- **Create/modify draft timer on today** → Immediately saved to localStorage
+- **Edit notes on draft timer** → Immediately saved to localStorage
+- **Navigate to previous date** → localStorage untouched, draft timers preserved
+- **Navigate back to today** → Fetch merges draft timers from localStorage with backend timers
+- **Refresh on any date** → Hydration loads draft timers, fetch merges them when viewing today
+- **Start timer** → Draft timer removed from localStorage (now has `backendTimerId`)
+- **Delete draft timer** → Draft timer removed from localStorage
+- **Delete draft timer group** → All draft timers in that group removed from localStorage
+- **Delete all draft timers** → localStorage cleared entirely
 
 **Notes:**
-- [Important observations or issues]
-- [Any blockers or pending work]
+- This architecture ensures draft timers persist indefinitely until explicitly started or removed by the user
+- No automatic clearing of localStorage during any navigation scenario
+- Aligns with user expectation that draft timers remain available across sessions and date changes
 
 ---
 
