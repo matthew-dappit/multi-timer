@@ -1,24 +1,3 @@
-# Documentation files - not needed in production deployment
-docs/
-*.md
-!README.md
-
-# Development files
-scripts/
-.github/
-
-# Test files
-**/*.test.ts
-**/*.test.tsx
-**/*.spec.ts
-**/*.spec.tsx
-
-# IDE and editor files
-.vscode/
-.idea/
-*.swp
-*.swo
-
 # Git files
 .git/
 .gitignore
