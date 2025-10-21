@@ -66,7 +66,9 @@ export default function Timer({
         compactNotesRef.current.select();
       }
     }
-  }, [isEditingCompactNote]); // Remove compactNotesValue dependency to prevent re-selecting on every keystroke
+    // Intentionally excluding compactNotesValue to prevent re-selecting on every keystroke
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEditingCompactNote]);
 
   // Format elapsed time as HH:MM:SS
   const formatTime = (seconds: number): string => {
