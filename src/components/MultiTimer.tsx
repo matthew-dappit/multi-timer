@@ -13,6 +13,7 @@ import {
   startZohoTimer,
   updateZohoTimer,
   stopZohoTimer,
+  syncZohoTimers,
   XanoTimerError,
   type CreateTimerPayload,
   type CreateIntervalPayload,
@@ -327,6 +328,7 @@ interface TimerData {
   elapsed: number; // Total elapsed seconds (calculated from events)
   backendTimerId: number | null; // Xano zoho_timers.id
   lastActiveDate: string | null; // YYYY-MM-DD format
+  syncedToZoho: boolean; // Indicates if timer has been synced to Zoho Books
 }
 
 interface TimerGroup {
@@ -346,6 +348,7 @@ const createTimer = (): TimerData => ({
   elapsed: 0,
   backendTimerId: null,
   lastActiveDate: null,
+  syncedToZoho: false,
 });
 
 const createGroup = (index: number): TimerGroup => ({
@@ -465,6 +468,13 @@ export default function MultiTimer() {
   const [activeDate, setActiveDate] = useState<string>(getTodayDateString());
   const [isLoadingTimers, setIsLoadingTimers] = useState(false);
   const [timersFetchError, setTimersFetchError] = useState<string | null>(null);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedTimerIds, setSelectedTimerIds] = useState<Set<string>>(
+    new Set()
+  );
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [syncSuccess, setSyncSuccess] = useState<string | null>(null);
   const hasHydrated = useRef(false);
   const runningTimerBaselineRef = useRef<number>(0);
 
@@ -858,6 +868,7 @@ export default function MultiTimer() {
             elapsed: backendTimer.total_duration,
             backendTimerId: backendTimer.id,
             lastActiveDate: backendTimer.active_date,
+            syncedToZoho: backendTimer.synced_to_zoho,
           };
 
           group.timers.push(timer);
@@ -1867,6 +1878,104 @@ export default function MultiTimer() {
     }));
   };
 
+  // Selection mode handlers
+  const handleToggleSelectionMode = () => {
+    setSelectionMode((prev) => !prev);
+    setSelectedTimerIds(new Set()); // Clear selections when toggling mode
+    setSyncError(null);
+    setSyncSuccess(null);
+  };
+
+  const handleTimerSelectionChange = (timerId: string, selected: boolean) => {
+    setSelectedTimerIds((prev) => {
+      const next = new Set(prev);
+      if (selected) {
+        next.add(timerId);
+      } else {
+        next.delete(timerId);
+      }
+      return next;
+    });
+  };
+
+  const handleSyncSelected = async () => {
+    const authToken = authClient.getToken();
+
+    if (!authToken) {
+      setSyncError("Please log in to sync timers.");
+      return;
+    }
+
+    // Collect backend timer IDs from selected timers
+    const backendTimerIds: number[] = [];
+    for (const group of groups) {
+      for (const timer of group.timers) {
+        if (
+          selectedTimerIds.has(timer.id) &&
+          timer.backendTimerId !== null &&
+          !timer.syncedToZoho
+        ) {
+          backendTimerIds.push(timer.backendTimerId);
+        }
+      }
+    }
+
+    if (backendTimerIds.length === 0) {
+      setSyncError("No eligible timers selected for sync.");
+      return;
+    }
+
+    setIsSyncing(true);
+    setSyncError(null);
+    setSyncSuccess(null);
+
+    try {
+      const response = await syncZohoTimers(
+        {timer_ids: backendTimerIds},
+        authToken
+      );
+
+      // Update timer sync status based on response
+      // Create a set of successfully synced timer IDs from the results
+      const syncedTimerIds = new Set(
+        response.results
+          .filter((result) => result.status === "success")
+          .map((result) => result.timer_id)
+      );
+
+      setGroups((prevGroups) =>
+        prevGroups.map((group) => ({
+          ...group,
+          timers: group.timers.map((timer) =>
+            timer.backendTimerId !== null &&
+            syncedTimerIds.has(timer.backendTimerId)
+              ? {...timer, syncedToZoho: true}
+              : timer
+          ),
+        }))
+      );
+
+      // Clear selection and exit selection mode
+      setSelectedTimerIds(new Set());
+      setSelectionMode(false);
+
+      setSyncSuccess(
+        `Successfully synced ${response.synced_count} timer(s) to Zoho Books.${
+          response.failed_count > 0 ? ` ${response.failed_count} failed.` : ""
+        }`
+      );
+    } catch (error) {
+      console.error("Failed to sync timers:", error);
+      if (error instanceof XanoTimerError) {
+        setSyncError(error.message);
+      } else {
+        setSyncError("Failed to sync timers. Please try again.");
+      }
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   // Date navigation handlers
   const handleDateChange = (newDate: string) => {
     setActiveDate(newDate);
@@ -2070,6 +2179,18 @@ export default function MultiTimer() {
         </div>
       )}
 
+      {syncError && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-200">
+          {syncError}
+        </div>
+      )}
+
+      {syncSuccess && (
+        <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-700 dark:border-green-900 dark:bg-green-950 dark:text-green-200">
+          {syncSuccess}
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
@@ -2088,6 +2209,65 @@ export default function MultiTimer() {
           >
             {isCompact ? "Exit Compact" : "Compact Mode"}
           </button>
+          <button
+            onClick={handleToggleSelectionMode}
+            className={`rounded-md border px-3 py-2 text-xs font-semibold transition cursor-pointer ${
+              selectionMode
+                ? "border-teal-400 bg-teal-50 text-teal-700 dark:bg-teal-500/10 dark:text-teal-300"
+                : "border-gray-300 text-gray-600 hover:border-teal-400 hover:text-teal-500 dark:border-gray-700 dark:text-gray-300 dark:hover:border-teal-400 dark:hover:text-teal-300"
+            }`}
+          >
+            {selectionMode ? "Cancel Selection" : "Select Timers"}
+          </button>
+          {selectionMode && (
+            <button
+              onClick={handleSyncSelected}
+              disabled={selectedTimerIds.size === 0 || isSyncing}
+              className="flex items-center gap-2 rounded-md bg-blue-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+            >
+              {isSyncing ? (
+                <>
+                  <svg
+                    className="h-4 w-4 animate-spin"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                  >
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    />
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                    />
+                  </svg>
+                  Syncing...
+                </>
+              ) : (
+                <>
+                  <svg
+                    className="h-4 w-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                    />
+                  </svg>
+                  Sync Selected ({selectedTimerIds.size})
+                </>
+              )}
+            </button>
+          )}
           <button
             onClick={addGroup}
             className="flex items-center gap-2 rounded-md bg-teal-400 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-500 cursor-pointer"
@@ -2257,6 +2437,10 @@ export default function MultiTimer() {
                       elapsed={timer.elapsed}
                       isCompact={isCompact}
                       isActive={runningSession?.timerId === timer.id}
+                      syncedToZoho={timer.syncedToZoho}
+                      backendTimerId={timer.backendTimerId}
+                      isSelected={selectedTimerIds.has(timer.id)}
+                      selectionMode={selectionMode}
                       taskOptions={timerTaskOptions}
                       isTaskSelectDisabled={isTaskSelectDisabled}
                       isTaskOptionsLoading={isLoadingTasks}
@@ -2274,6 +2458,7 @@ export default function MultiTimer() {
                       onOpenTimeHistory={() =>
                         handleOpenTimeHistory(group.id, timer.id)
                       }
+                      onSelectionChange={handleTimerSelectionChange}
                     />
                   </div>
                 ))}

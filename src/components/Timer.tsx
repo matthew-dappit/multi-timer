@@ -15,6 +15,10 @@ interface TimerProps {
   elapsed: number;
   isCompact: boolean;
   isActive?: boolean;
+  syncedToZoho?: boolean;
+  backendTimerId?: number | null;
+  isSelected?: boolean;
+  selectionMode?: boolean;
   taskOptions: TimerTaskOption[];
   isTaskSelectDisabled?: boolean;
   isTaskOptionsLoading?: boolean;
@@ -24,6 +28,7 @@ interface TimerProps {
   onStop?: () => void | Promise<void>;
   onOpenTimeEntry?: () => void;
   onOpenTimeHistory?: () => void;
+  onSelectionChange?: (id: string, selected: boolean) => void;
 }
 
 export default function Timer({
@@ -34,6 +39,10 @@ export default function Timer({
   elapsed,
   isCompact,
   isActive = false,
+  syncedToZoho = false,
+  backendTimerId = null,
+  isSelected = false,
+  selectionMode = false,
   taskOptions,
   isTaskSelectDisabled = false,
   isTaskOptionsLoading = false,
@@ -43,6 +52,7 @@ export default function Timer({
   onStop,
   onOpenTimeEntry,
   onOpenTimeHistory,
+  onSelectionChange,
 }: TimerProps) {
   const [showMenu, setShowMenu] = useState(false);
   const [isEditingCompactNote, setIsEditingCompactNote] = useState(false);
@@ -131,10 +141,48 @@ export default function Timer({
       ? compactNotesDisplay
       : "Add note";
 
+    // Show checkbox if in selection mode and has backend ID
+    const showCheckbox = selectionMode && backendTimerId !== null && !syncedToZoho;
+
     return (
       <div
         className={`group relative flex h-full flex-col gap-3 rounded-xl border bg-white p-3 text-left shadow-sm transition hover:border-teal-400 hover:shadow-md dark:bg-gray-800 ${borderColor}`}
       >
+        {/* Selection Checkbox */}
+        {showCheckbox && (
+          <div className="absolute left-2 top-2 z-10">
+            <input
+              type="checkbox"
+              checked={isSelected}
+              onChange={(e) => {
+                e.stopPropagation();
+                onSelectionChange?.(id, e.target.checked);
+              }}
+              className="h-4 w-4 cursor-pointer rounded border-gray-300 text-teal-500 focus:ring-2 focus:ring-teal-400"
+            />
+          </div>
+        )}
+
+        {/* Sync Status Badge */}
+        {backendTimerId !== null && (
+          <div className="absolute left-2 bottom-2">
+            {syncedToZoho ? (
+              <div className="flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-900/30 dark:text-green-300">
+                <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                </svg>
+                Synced
+              </div>
+            ) : (
+              <div className="flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+                <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
+                </svg>
+                Pending
+              </div>
+            )}
+          </div>
+        )}
         {/* Menu Button - Visible on hover */}
         <div className="absolute right-2 top-2 opacity-0 transition-opacity group-hover:opacity-100">
           <button
@@ -267,10 +315,27 @@ export default function Timer({
     ? "border-teal-400 ring-2 ring-teal-400/50"
     : "border-gray-200 dark:border-gray-700";
 
+  // Show checkbox if in selection mode and has backend ID
+  const showCheckbox = selectionMode && backendTimerId !== null && !syncedToZoho;
+
   return (
     <div
       className={`relative flex h-full flex-col gap-4 rounded-xl border bg-white p-4 shadow-sm transition-shadow dark:bg-gray-800 ${borderColor}`}
     >
+      {/* Selection Checkbox */}
+      {showCheckbox && (
+        <div className="absolute left-3 top-3 z-10">
+          <input
+            type="checkbox"
+            checked={isSelected}
+            onChange={(e) => {
+              e.stopPropagation();
+              onSelectionChange?.(id, e.target.checked);
+            }}
+            className="h-5 w-5 cursor-pointer rounded border-gray-300 text-teal-500 focus:ring-2 focus:ring-teal-400"
+          />
+        </div>
+      )}
       {/* Menu Button - Always visible in standard mode */}
       <div className="absolute right-3 top-3">
         <button
@@ -338,11 +403,33 @@ export default function Timer({
         )}
       </div>
 
-      <div className="flex items-center gap-2">
-        <div className={`h-2 w-2 rounded-full ${statusColor}`} />
-        <span className="text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">
-          {statusText}
-        </span>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <div className={`h-2 w-2 rounded-full ${statusColor}`} />
+          <span className="text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">
+            {statusText}
+          </span>
+        </div>
+        {/* Sync Status Badge */}
+        {backendTimerId !== null && (
+          <div>
+            {syncedToZoho ? (
+              <div className="flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-900/30 dark:text-green-300">
+                <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                </svg>
+                Synced
+              </div>
+            ) : (
+              <div className="flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+                <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
+                </svg>
+                Pending
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <select

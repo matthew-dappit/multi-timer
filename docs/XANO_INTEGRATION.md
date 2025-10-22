@@ -472,6 +472,76 @@ Completely redesigned draft timer persistence from reactive (automatic sync) to 
 
 ---
 
+#### Function: Batch Timer Sync to Zoho Books
+**Status:** ✅ Complete
+
+**Purpose:** Enable batch synchronization of multiple timers to Zoho Books with visual sync status indicators, multi-select UI, and proper handling of sync results from the backend.
+
+**API Endpoints:**
+- POST `/zoho_timers/sync` - Batch sync unsynced timers to Zoho Books
+
+**Implementation:**
+1. Extended `TimerData` interface with `syncedToZoho: boolean` field to track sync status
+2. Created `syncZohoTimers` API function with proper request/response types matching actual API contract
+3. Added visual sync status badges to Timer component:
+   - Green "Synced" badge with checkmark for synced timers
+   - Amber "Pending" badge with clock icon for unsynced timers
+4. Implemented multi-select functionality:
+   - Selection mode toggle button ("Select Timers" / "Cancel Selection")
+   - Checkboxes on unsynced timers with backend IDs
+   - "Sync Selected (N)" button with loading state
+5. Added sync operation handler that:
+   - Collects backend timer IDs from selected timers
+   - Calls batch sync API endpoint
+   - Updates timer sync status based on response results
+   - Shows success/error messages to user
+   - Auto-exits selection mode on successful sync
+
+**Code Changes:**
+- `src/lib/xano-timers.ts:72-88` - Added `SyncTimersPayload`, `SyncResult`, and `SyncTimersResponse` interfaces
+- `src/lib/xano-timers.ts:430-466` - Created `syncZohoTimers` function with error handling
+- `src/components/MultiTimer.tsx:322-330` - Extended `TimerData` with `syncedToZoho` field
+- `src/components/MultiTimer.tsx:342-351` - Updated `createTimer()` to initialize `syncedToZoho: false`
+- `src/components/MultiTimer.tsx:855-864` - Populated `syncedToZoho` from backend response during timer fetch
+- `src/components/MultiTimer.tsx:471-478` - Added selection mode state variables
+- `src/components/MultiTimer.tsx:1881-1978` - Implemented selection and sync handlers
+- `src/components/MultiTimer.tsx:2183-2193` - Added sync error/success message displays
+- `src/components/MultiTimer.tsx:2213-2271` - Added selection mode toggle and sync buttons to UI
+- `src/components/MultiTimer.tsx:2441-2444,2462` - Passed sync props to Timer component
+- `src/components/Timer.tsx:18-21,31` - Extended Timer props with sync-related fields
+- `src/components/Timer.tsx:42-45,55` - Added sync props to component signature
+- `src/components/Timer.tsx:145,152-185` - Added checkbox and sync badge to compact mode
+- `src/components/Timer.tsx:319,325-338` - Added checkbox to standard mode
+- `src/components/Timer.tsx:406-433` - Added sync status badge to standard mode
+
+**API Response Structure:**
+The actual API returns a different structure than the swagger documentation indicated:
+```typescript
+{
+  synced_count: 2,        // number, not string
+  failed_count: 0,        // number, not string
+  total_timers: 2,        // number (count), not array
+  results: [              // array of result objects
+    {
+      status: "success",
+      timer_id: 44,
+      zoho_time_entry_id: "5076064000008168004"
+    }
+  ]
+}
+```
+
+**Notes:**
+- Sync status badges only appear on timers with `backendTimerId` (not draft timers)
+- Checkboxes only appear in selection mode and only on unsynced timers
+- Successfully synced timers are updated in state based on `results` array
+- Selection mode auto-exits on successful sync
+- Failed syncs preserve selection state for retry
+- Build validation passed successfully
+- Fixed type mismatch between swagger docs and actual API response
+
+---
+
 ## API Endpoints
 
 ### Timer Controls
@@ -483,6 +553,26 @@ Completely redesigned draft timer persistence from reactive (automatic sync) to 
 **Key contract changes (2025-10-16):**
 - Interval records are no longer included in these responses; fetch them separately when history is requested.
 - Client-provided timestamps drive optimistic UI updates so that final totals align with backend calculations once responses arrive.
+
+### Timer Sync
+
+- **POST `/zoho_timers/sync`** – Batch sync unsynced timers to Zoho Books
+  - **Request body:** `{ timer_ids: number[] }` - Array of Xano timer IDs to sync
+  - **Response:**
+    ```typescript
+    {
+      synced_count: number,
+      failed_count: number,
+      total_timers: number,  // Total count of timers processed
+      results: Array<{
+        status: "success" | "error",
+        timer_id: number,
+        zoho_time_entry_id?: string,
+        error?: string
+      }>
+    }
+    ```
+  - **Notes:** Successfully synced timers will have `synced_to_zoho` flag set to `true` and a `zoho_time_entry_id` assigned.
 
 ## Data Mapping
 
@@ -596,14 +686,15 @@ This section captures important architectural and implementation decisions.
 - [x] Function 2: Timer start/stop/resume backend sync
 - [x] Function 3: Read time events (GET /zoho_timers with date navigation)
 - [x] Function 4: Delete time event
+- [x] Function 5: Batch timer sync to Zoho Books
 
 **Phase 2: Project/Task Sync** - 0% Complete
-- [ ] Function 5-8: [To be defined]
+- [ ] Function 6+: [To be defined]
 
 **Phase 3: Advanced Features** - 0% Complete
 - [ ] Function 9+: [To be defined]
 
-**Total Integration Progress:** 100% (Phase 1)
+**Total Integration Progress:** 100% (Phase 1 + Sync)
 
 ---
 

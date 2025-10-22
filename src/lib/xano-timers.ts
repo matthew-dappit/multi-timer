@@ -69,6 +69,24 @@ export interface StopTimerPayload {
   end_time?: number | null;
 }
 
+export interface SyncTimersPayload {
+  timer_ids: number[];
+}
+
+export interface SyncResult {
+  status: "success" | "error";
+  timer_id: number;
+  zoho_time_entry_id?: string;
+  error?: string;
+}
+
+export interface SyncTimersResponse {
+  synced_count: number;
+  failed_count: number;
+  total_timers: number;
+  results: SyncResult[];
+}
+
 export class XanoTimerError extends Error {
   constructor(
     message: string,
@@ -412,6 +430,44 @@ export async function deleteZohoTimerInterval(
     }
     throw new XanoTimerError(
       `Network error deleting interval: ${error instanceof Error ? error.message : "Unknown error"}`
+    );
+  }
+}
+
+/**
+ * Batch sync unsynced timers to Zoho Books
+ * Syncs multiple timers in a single API call
+ */
+export async function syncZohoTimers(
+  payload: SyncTimersPayload,
+  authToken: string
+): Promise<SyncTimersResponse> {
+  try {
+    const response = await fetch(`${WEBAPP_API_BASE_URL}/zoho_timers/sync`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${authToken}`,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new XanoTimerError(
+        errorText || `Failed to sync timers (${response.status})`,
+        response.status
+      );
+    }
+
+    const data: SyncTimersResponse = await response.json();
+    return data;
+  } catch (error) {
+    if (error instanceof XanoTimerError) {
+      throw error;
+    }
+    throw new XanoTimerError(
+      `Network error syncing timers: ${error instanceof Error ? error.message : "Unknown error"}`
     );
   }
 }
