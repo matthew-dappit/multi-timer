@@ -942,6 +942,17 @@ export default function MultiTimer() {
     };
   }, [activeDate, isViewingToday]);
 
+  // Auto-dismiss sync success message after 5 seconds
+  useEffect(() => {
+    if (!syncSuccess) return;
+
+    const timer = setTimeout(() => {
+      setSyncSuccess(null);
+    }, 5000);
+
+    return () => clearTimeout(timer);
+  }, [syncSuccess]);
+
   const updateGroups = (updater: (groups: TimerGroup[]) => TimerGroup[]) => {
     setGroups((previous) => updater(previous));
   };
@@ -1898,6 +1909,21 @@ export default function MultiTimer() {
     });
   };
 
+  const handleSelectAllEligible = () => {
+    const eligibleTimerIds = new Set<string>();
+
+    for (const group of groups) {
+      for (const timer of group.timers) {
+        // Only select timers that have backend ID and are not already synced
+        if (timer.backendTimerId !== null && !timer.syncedToZoho) {
+          eligibleTimerIds.add(timer.id);
+        }
+      }
+    }
+
+    setSelectedTimerIds(eligibleTimerIds);
+  };
+
   const handleSyncSelected = async () => {
     const authToken = authClient.getToken();
 
@@ -2217,56 +2243,64 @@ export default function MultiTimer() {
                 : "border-gray-300 text-gray-600 hover:border-teal-400 hover:text-teal-500 dark:border-gray-700 dark:text-gray-300 dark:hover:border-teal-400 dark:hover:text-teal-300"
             }`}
           >
-            {selectionMode ? "Cancel Selection" : "Select Timers"}
+            {selectionMode ? "Cancel" : "Sync"}
           </button>
           {selectionMode && (
-            <button
-              onClick={handleSyncSelected}
-              disabled={selectedTimerIds.size === 0 || isSyncing}
-              className="flex items-center gap-2 rounded-md bg-blue-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
-            >
-              {isSyncing ? (
-                <>
-                  <svg
-                    className="h-4 w-4 animate-spin"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                  >
-                    <circle
-                      className="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
+            <>
+              <button
+                onClick={handleSelectAllEligible}
+                className="rounded-md border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-600 transition hover:border-teal-400 hover:text-teal-500 dark:border-gray-700 dark:text-gray-300 dark:hover:border-teal-400 dark:hover:text-teal-300 cursor-pointer"
+              >
+                Select All
+              </button>
+              <button
+                onClick={handleSyncSelected}
+                disabled={selectedTimerIds.size === 0 || isSyncing}
+                className="flex items-center gap-2 rounded-md bg-blue-500 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+              >
+                {isSyncing ? (
+                  <>
+                    <svg
+                      className="h-4 w-4 animate-spin"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                    >
+                      <circle
+                        className="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                      />
+                      <path
+                        className="opacity-75"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                      />
+                    </svg>
+                    Syncing...
+                  </>
+                ) : (
+                  <>
+                    <svg
+                      className="h-4 w-4"
+                      fill="none"
                       stroke="currentColor"
-                      strokeWidth="4"
-                    />
-                    <path
-                      className="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                    />
-                  </svg>
-                  Syncing...
-                </>
-              ) : (
-                <>
-                  <svg
-                    className="h-4 w-4"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                    />
-                  </svg>
-                  Sync Selected ({selectedTimerIds.size})
-                </>
-              )}
-            </button>
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                      />
+                    </svg>
+                    Sync Selected ({selectedTimerIds.size})
+                  </>
+                )}
+              </button>
+            </>
           )}
           <button
             onClick={addGroup}
@@ -2439,6 +2473,7 @@ export default function MultiTimer() {
                       isActive={runningSession?.timerId === timer.id}
                       syncedToZoho={timer.syncedToZoho}
                       backendTimerId={timer.backendTimerId}
+                      lastActiveDate={timer.lastActiveDate}
                       isSelected={selectedTimerIds.has(timer.id)}
                       selectionMode={selectionMode}
                       taskOptions={timerTaskOptions}

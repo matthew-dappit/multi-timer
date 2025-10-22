@@ -17,6 +17,7 @@ interface TimerProps {
   isActive?: boolean;
   syncedToZoho?: boolean;
   backendTimerId?: number | null;
+  lastActiveDate?: string | null;
   isSelected?: boolean;
   selectionMode?: boolean;
   taskOptions: TimerTaskOption[];
@@ -41,6 +42,7 @@ export default function Timer({
   isActive = false,
   syncedToZoho = false,
   backendTimerId = null,
+  lastActiveDate = null,
   isSelected = false,
   selectionMode = false,
   taskOptions,
@@ -60,6 +62,16 @@ export default function Timer({
   const [standardNotesValue, setStandardNotesValue] = useState(notes);
   const compactNotesRef = useRef<HTMLTextAreaElement | null>(null);
   const isUserTypingRef = useRef(false);
+
+  // Helper to check if timer is from today
+  const isFromToday = (() => {
+    if (!lastActiveDate) return true; // If no date, assume it's today (new timer)
+    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+    return lastActiveDate === today;
+  })();
+
+  // Determine if start button should be shown/enabled
+  const canStart = isFromToday && !syncedToZoho;
 
   useEffect(() => {
     // Don't sync from props if user is actively typing
@@ -115,7 +127,7 @@ export default function Timer({
   const handleToggle = () => {
     if (isActive && onStop) {
       onStop();
-    } else if (!isActive && onStart) {
+    } else if (!isActive && onStart && canStart) {
       onStart();
     }
   };
@@ -251,7 +263,10 @@ export default function Timer({
         </div>
 
         {/* Timer Content - Clickable to start/stop */}
-        <div onClick={handleToggle} className="cursor-pointer">
+        <div
+          onClick={handleToggle}
+          className={isActive || canStart ? "cursor-pointer" : "cursor-not-allowed opacity-60"}
+        >
           <span className="font-mono text-2xl font-light text-gray-900 dark:text-gray-100">
             {formattedTime}
           </span>
@@ -484,13 +499,17 @@ export default function Timer({
         className="w-full flex-1 resize-none rounded-md border border-gray-200 bg-transparent px-3 py-2 text-sm text-gray-700 outline-none transition focus:border-teal-400 focus:ring-1 focus:ring-teal-400 dark:border-gray-700 dark:text-gray-200"
       />
 
-      <button
-        onClick={handleToggle}
-        className="w-full rounded-md px-3 py-2 text-sm font-semibold text-white transition hover:opacity-90 cursor-pointer"
-        style={{backgroundColor: buttonBgColor}}
-      >
-        {buttonText}
-      </button>
+      {/* Only show start/stop button for today's timers */}
+      {isFromToday && (
+        <button
+          onClick={handleToggle}
+          disabled={!isActive && !canStart}
+          className="w-full rounded-md px-3 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+          style={{backgroundColor: buttonBgColor}}
+        >
+          {buttonText}
+        </button>
+      )}
     </div>
   );
 }
